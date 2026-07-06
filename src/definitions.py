@@ -1,8 +1,7 @@
 from dagster import Definitions
 
-from learning import hello_dagster
-
+from learning import excited_hello, hello_dagster
 
 defs = Definitions(
-    assets=[hello_dagster],
+    assets=[hello_dagster, excited_hello],
 )
