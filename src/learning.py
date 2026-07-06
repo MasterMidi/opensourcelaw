@@ -1,4 +1,9 @@
-from dagster import AssetExecutionContext, asset
+from dagster import AssetExecutionContext, Config, asset
+
+
+class GreetingConfig(Config):
+    name: str = "Dagster"
+    excited: bool = True
 
 
 @asset(group_name="learning")
@@ -21,3 +26,26 @@ def excited_hello(context: AssetExecutionContext, hello_dagster: str) -> str:
         }
     )
     return excited_message
+
+
+@asset(group_name="learning")
+def configurable_greeting(
+    context: AssetExecutionContext,
+    config: GreetingConfig,
+) -> str:
+    message = f"Hello, {config.name}"
+
+    if config.excited:
+        message = message.upper() + "!"
+
+    context.log.info(f"Created greeting: {message}")
+
+    context.add_output_metadata(
+        {
+            "name": config.name,
+            "excited": config.excited,
+            "message": message,
+        }
+    )
+
+    return message
