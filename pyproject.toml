@@ -26,7 +26,8 @@ requires = ["hatchling", "editables"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/opensourcelaw"]
+only-include = ["src"]
+sources = ["src"]
 
 [tool.dagster]
-module_name = "opensourcelaw.definitions"
+module_name = "definitions"

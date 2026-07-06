@@ -1,2 +1,2 @@
 load_from:
-  - python_module: opensourcelaw.definitions
+  - python_module: definitions
