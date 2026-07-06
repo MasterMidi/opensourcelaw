@@ -30,6 +30,44 @@ Start the local Dagster UI:
 dagster dev
 ```
 
+## Retsinformation Raw Ingest
+
+The first Dagster asset chain fetches raw source data from `retsinformation.dk` only:
+
+```text
+sources -> retsinformation_sitemap_pages -> discovered_items -> raw_fetches -> changed_raw_fetches
+```
+
+This intentionally stops before parsing, normalization, chunking, embedding, or vector index syncing.
+
+Durable local outputs are written under `data/ingest` by default:
+
+```text
+data/ingest/discovery/sitemap_pages/...
+data/ingest/raw/retsinformation_eli/...
+data/ingest/metadata/raw_fetches.jsonl
+data/ingest/metadata/changed_raw_fetches.jsonl
+data/ingest/runs/<dagster-run-id>/...
+```
+
+Useful local overrides:
+
+```sh
+export OPENSOURCELAW_INGEST_ROOT=/tmp/opensourcelaw-ingest
+export OPENSOURCELAW_RETSINFO_SITEMAP_PAGES=1
+export OPENSOURCELAW_RETSINFO_MAX_ITEMS=25
+```
+
+To use an explicit source config, start from:
+
+```sh
+export OPENSOURCELAW_SOURCES_FILE=config/retsinformation.sources.example.json
+```
+
+The built-in default is intentionally capped to one sitemap page and 25 raw fetches so a developer does not accidentally mirror the whole site. For a full run, use the example config with `sitemap_pages` set to `19` and `max_items` set to `null`.
+
+The storage boundary is currently filesystem-based. A local RustFS/S3 setup would make sense once an S3 object-store implementation is added behind the same store interface; for this first milestone, the filesystem store keeps local runs simple and testable.
+
 ## Dependencies
 
 Add Python dependencies with `uv`, then re-enter the Nix shell so `uv2nix` can rebuild the virtualenv from the updated lockfile:

@@ -1,0 +1,21 @@
+{
+  "sources": [
+    {
+      "id": "retsinformation_eli",
+      "name": "Retsinformation ELI sitemap",
+      "type": "retsinformation_sitemap",
+      "enabled": true,
+      "base_url": "https://www.retsinformation.dk",
+      "sitemap_url": "https://www.retsinformation.dk/eli/sitemap.xml",
+      "sitemap_pages": 19,
+      "max_items": null,
+      "sitemap_delay_seconds": 2.0,
+      "request_delay_seconds": 1.0,
+      "timeout_seconds": 30,
+      "retries": 3,
+      "retry_backoff_seconds": 10.0,
+      "retry_status_codes": [429, 500, 502, 503],
+      "user_agent": "opensourcelaw-retsinformation-ingest/0.1"
+    }
+  ]
+}
