@@ -1,9 +1,10 @@
-from dagster import Definitions, asset
+from dagster import Definitions
+
+from opensourcelaw.assets.retsinformation import RETSINFORMATION_RAW_ASSETS
+from opensourcelaw.resources import IngestStoreResource
 
 
-@asset
-def example_asset() -> int:
-    return 1
-
-
-defs = Definitions(assets=[example_asset])
+defs = Definitions(
+    assets=RETSINFORMATION_RAW_ASSETS,
+    resources={"ingest_store": IngestStoreResource()},
+)
