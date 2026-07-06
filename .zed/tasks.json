@@ -1,0 +1,47 @@
+[
+  {
+    "label": "nix: build",
+    "command": "nix build",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "dagster: dev",
+    "command": "mkdir -p \"$ZED_WORKTREE_ROOT/.dagster_home\" \"$ZED_WORKTREE_ROOT/data/ingest\" && DAGSTER_HOME=\"$ZED_WORKTREE_ROOT/.dagster_home\" OPENSOURCELAW_INGEST_ROOT=\"$ZED_WORKTREE_ROOT/data/ingest\" nix develop -c dagster dev",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "dagster: validate definitions",
+    "command": "mkdir -p \"$ZED_WORKTREE_ROOT/.dagster_home\" && DAGSTER_HOME=\"$ZED_WORKTREE_ROOT/.dagster_home\" nix develop -c dagster definitions validate",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "test: all",
+    "command": "nix develop -c python -m pytest",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "test: current file",
+    "command": "nix develop -c python -m pytest \"$ZED_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  }
+]

@@ -7,7 +7,7 @@
       "enabled": true,
       "base_url": "https://www.retsinformation.dk",
       "sitemap_url": "https://www.retsinformation.dk/eli/sitemap.xml",
-      "sitemap_pages": 19,
+      "sitemap_pages": 500,
       "max_items": null,
       "sitemap_delay_seconds": 2.0,
       "request_delay_seconds": 1.0,

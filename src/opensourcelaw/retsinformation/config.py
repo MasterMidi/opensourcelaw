@@ -31,7 +31,7 @@ def default_sources() -> list[Source]:
                 "base_url": RETSINFO_BASE_URL,
                 "sitemap_url": RETSINFO_SITEMAP_URL,
                 "sitemap_pages": _env_int("OPENSOURCELAW_RETSINFO_SITEMAP_PAGES", 1),
-                "max_items": _env_int("OPENSOURCELAW_RETSINFO_MAX_ITEMS", 25),
+                # "max_items": _env_int("OPENSOURCELAW_RETSINFO_MAX_ITEMS", 25),
                 "sitemap_delay_seconds": 2.0,
                 "request_delay_seconds": 1.0,
                 "timeout_seconds": 30,
@@ -52,7 +52,9 @@ def load_sources(path: str | Path | None = None) -> list[Source]:
     payload = json.loads(Path(configured_path).read_text(encoding="utf-8"))
     raw_sources: Any = payload.get("sources") if isinstance(payload, dict) else payload
     if not isinstance(raw_sources, list):
-        raise ValueError("source config must be a list or an object with a 'sources' list")
+        raise ValueError(
+            "source config must be a list or an object with a 'sources' list"
+        )
 
     sources = [Source.from_mapping(item) for item in raw_sources]
     return [source for source in sources if source.enabled]
