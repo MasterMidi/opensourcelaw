@@ -5,8 +5,8 @@ description = "Dagster data pipelines for opensourcelaw."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "dagster>=1.10,<2.0",
-  "dagster-webserver>=1.10,<2.0",
+  "dagster>=1.13,<2.0",
+  "dagster-webserver>=1.13,<2.0",
 ]
 
 [dependency-groups]
