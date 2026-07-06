@@ -1,6 +1,6 @@
-from pathlib import Path
-
 from dagster import AssetExecutionContext, Config, asset
+
+from src.resources import LearningStorageResource
 
 
 class GreetingConfig(Config):
@@ -54,11 +54,12 @@ def configurable_greeting(
 
 
 @asset(group_name="learning")
-def greeting_file(context: AssetExecutionContext, configurable_greeting: str) -> str:
-    output_dir = Path("data/learning")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    output_path = output_dir / "greeting.txt"
+def greeting_file(
+    context: AssetExecutionContext,
+    configurable_greeting: str,
+    learning_storage: LearningStorageResource,
+) -> str:
+    output_path = learning_storage.path_for("greeting.txt")
     output_path.write_text(configurable_greeting, encoding="utf-8")
 
     context.log.info(f"Wrote greeting to {output_path}")
