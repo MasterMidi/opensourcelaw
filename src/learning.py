@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from dagster import AssetExecutionContext, Config, asset
 
 
@@ -49,3 +51,23 @@ def configurable_greeting(
     )
 
     return message
+
+
+@asset(group_name="learning")
+def greeting_file(context: AssetExecutionContext, configurable_greeting: str) -> str:
+    output_dir = Path("data/learning")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = output_dir / "greeting.txt"
+    output_path.write_text(configurable_greeting, encoding="utf-8")
+
+    context.log.info(f"Wrote greeting to {output_path}")
+
+    context.add_output_metadata(
+        {
+            "output_path": str(output_path),
+            "bytes_written": output_path.stat().st_size,
+        }
+    )
+
+    return str(output_path)
