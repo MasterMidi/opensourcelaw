@@ -3,12 +3,10 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
-from time import sleep
 from urllib.parse import urlparse, urlunparse
 
 from dagster import (
     AssetExecutionContext,
-    Config,
     MetadataValue,
     StaticPartitionsDefinition,
     asset,
@@ -61,11 +59,6 @@ class DocumentPageBatch:
     year: str
     pages: list[DocumentPage]
     failures: list[DocumentFetchFailure]
-
-
-class DocumentFetchConfig(Config):
-    max_documents: int | None = 25
-    request_delay_seconds: float = 0.0
 
 
 def document_xml_url(url: str) -> str:
@@ -140,28 +133,21 @@ def _fetch_document_pages(
     context: AssetExecutionContext,
     refs: DocumentRefSet,
     retsinformation_http: RetsinformationHttpResource,
-    config: DocumentFetchConfig,
 ) -> DocumentPageBatch:
-    selected_entries = (
-        refs.entries[: config.max_documents]
-        if config.max_documents is not None
-        else refs.entries
-    )
-
     context.log.info(
-        f"Fetching {len(selected_entries)} of {len(refs.entries)} "
-        f"{refs.document_type.value} documents for year {refs.year}"
+        f"Fetching {len(refs.entries)} {refs.document_type.value} documents "
+        f"for year {refs.year}"
     )
 
     pages: list[DocumentPage] = []
     failures: list[DocumentFetchFailure] = []
 
-    for index, entry in enumerate(selected_entries, start=1):
+    for index, entry in enumerate(refs.entries, start=1):
         xml_url = document_xml_url(entry.url)
         api_url = document_api_url(entry.url)
         context.log.info(
             f"Fetching {refs.document_type.value} document {index}/"
-            f"{len(selected_entries)}: {entry.year}/{entry.id}"
+            f"{len(refs.entries)}: {entry.year}/{entry.id}"
         )
 
         response = retsinformation_http.get(xml_url)
@@ -193,9 +179,6 @@ def _fetch_document_pages(
                     f"API fallback returned 404"
                 )
 
-                if config.request_delay_seconds > 0 and index < len(selected_entries):
-                    sleep(config.request_delay_seconds)
-
                 continue
 
             response.raise_for_status()
@@ -216,9 +199,6 @@ def _fetch_document_pages(
                     f"API fallback returned no document"
                 )
 
-                if config.request_delay_seconds > 0 and index < len(selected_entries):
-                    sleep(config.request_delay_seconds)
-
                 continue
 
             pages.append(
@@ -232,9 +212,6 @@ def _fetch_document_pages(
                     bytes_downloaded=len(response.content),
                 )
             )
-
-            if config.request_delay_seconds > 0 and index < len(selected_entries):
-                sleep(config.request_delay_seconds)
 
             continue
 
@@ -252,9 +229,6 @@ def _fetch_document_pages(
             )
         )
 
-        if config.request_delay_seconds > 0 and index < len(selected_entries):
-            sleep(config.request_delay_seconds)
-
     source_counts = Counter(page.source.value for page in pages)
 
     metadata = {
@@ -268,17 +242,14 @@ def _fetch_document_pages(
             1 for failure in failures if failure.status_code == 404
         ),
         "bytes_downloaded": sum(page.bytes_downloaded for page in pages),
-        "max_documents": config.max_documents
-        if config.max_documents is not None
-        else "all",
     }
 
-    if selected_entries:
+    if refs.entries:
         metadata["first_xml_url"] = MetadataValue.url(
-            document_xml_url(selected_entries[0].url)
+            document_xml_url(refs.entries[0].url)
         )
         metadata["first_api_url"] = MetadataValue.url(
-            document_api_url(selected_entries[0].url)
+            document_api_url(refs.entries[0].url)
         )
 
     context.add_output_metadata(metadata)
@@ -330,7 +301,6 @@ def retsinfo_document_refs(
 @asset(group_name="retsinformation", partitions_def=document_year_partitions)
 def fc_document_pages(
     context: AssetExecutionContext,
-    config: DocumentFetchConfig,
     fc_document_refs: DocumentRefSet,
     retsinformation_http: RetsinformationHttpResource,
 ) -> DocumentPageBatch:
@@ -338,14 +308,12 @@ def fc_document_pages(
         context=context,
         refs=fc_document_refs,
         retsinformation_http=retsinformation_http,
-        config=config,
     )
 
 
 @asset(group_name="retsinformation", partitions_def=document_year_partitions)
 def ilt_document_pages(
     context: AssetExecutionContext,
-    config: DocumentFetchConfig,
     ilt_document_refs: DocumentRefSet,
     retsinformation_http: RetsinformationHttpResource,
 ) -> DocumentPageBatch:
@@ -353,14 +321,12 @@ def ilt_document_pages(
         context=context,
         refs=ilt_document_refs,
         retsinformation_http=retsinformation_http,
-        config=config,
     )
 
 
 @asset(group_name="retsinformation", partitions_def=document_year_partitions)
 def retsinfo_document_pages(
     context: AssetExecutionContext,
-    config: DocumentFetchConfig,
     retsinfo_document_refs: DocumentRefSet,
     retsinformation_http: RetsinformationHttpResource,
 ) -> DocumentPageBatch:
@@ -368,5 +334,4 @@ def retsinfo_document_pages(
         context=context,
         refs=retsinfo_document_refs,
         retsinformation_http=retsinformation_http,
-        config=config,
     )
