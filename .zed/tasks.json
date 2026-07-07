@@ -6,7 +6,7 @@
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
     "reveal": "always",
-    "hide": "never"
+    "hide": "never",
   },
   {
     "label": "dagster: dev",
@@ -15,7 +15,7 @@
     "use_new_terminal": true,
     "allow_concurrent_runs": false,
     "reveal": "always",
-    "hide": "never"
+    "hide": "never",
   },
   {
     "label": "dagster: validate definitions",
@@ -24,7 +24,7 @@
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
     "reveal": "always",
-    "hide": "never"
+    "hide": "never",
   },
   {
     "label": "test: all",
@@ -33,7 +33,7 @@
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
     "reveal": "always",
-    "hide": "never"
+    "hide": "never",
   },
   {
     "label": "test: current file",
@@ -42,6 +42,6 @@
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
     "reveal": "always",
-    "hide": "never"
-  }
+    "hide": "never",
+  },
 ]
