@@ -3,12 +3,14 @@ from dagster import Definitions
 from learning import (
     configurable_greeting,
     excited_hello,
+    fake_raw_page_files,
     fake_raw_pages,
     fake_source_urls,
     greeting_file,
     hello_dagster,
     page_summary,
     parsed_page_titles,
+    parsed_titles_from_files,
 )
 from src.resources import LearningStorageResource
 
@@ -22,6 +24,8 @@ defs = Definitions(
         fake_raw_pages,
         parsed_page_titles,
         page_summary,
+        fake_raw_page_files,
+        parsed_titles_from_files,
     ],
     resources={"learning_storage": LearningStorageResource()},
 )

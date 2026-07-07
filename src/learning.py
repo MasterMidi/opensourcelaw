@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from dagster import AssetExecutionContext, Config, asset
 
 from src.resources import LearningStorageResource
@@ -156,3 +158,55 @@ def page_summary(
     context.add_output_metadata(summary)
 
     return summary
+
+
+@asset(group_name="learning")
+def fake_raw_page_files(
+    context: AssetExecutionContext,
+    fake_source_urls: list[str],
+    learning_storage: LearningStorageResource,
+) -> list[str]:
+    file_paths = []
+
+    for index, url in enumerate(fake_source_urls, start=1):
+        html = f"<html><title>Page for {url}</title><body>Some legal text</body></html>"
+        output_path = learning_storage.path_for(f"raw_pages/page_{index}.html")
+
+        output_path.write_text(html, encoding="utf-8")
+        file_paths.append(str(output_path))
+
+    context.add_output_metadata(
+        {
+            "file_count": len(file_paths),
+            "file_paths": file_paths,
+        }
+    )
+
+    return file_paths
+
+
+@asset(group_name="learning")
+def parsed_titles_from_files(
+    context: AssetExecutionContext,
+    fake_raw_page_files: list[str],
+) -> list[dict[str, str]]:
+    titles = []
+
+    for file_path in fake_raw_page_files:
+        html = Path(file_path).read_text(encoding="utf-8")
+        title = html.split("<title>")[1].split("</title>")[0]
+
+        titles.append(
+            {
+                "file_path": file_path,
+                "title": title,
+            }
+        )
+
+    context.add_output_metadata(
+        {
+            "title_count": len(titles),
+        }
+    )
+
+    return titles
