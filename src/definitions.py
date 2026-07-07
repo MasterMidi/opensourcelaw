@@ -20,6 +20,11 @@ from learning import (
     yearly_fake_source_urls,
     yearly_parsed_titles_from_files,
 )
+from src.assets.retsinformation.documents import (
+    fc_document_pages,
+    ilt_document_pages,
+    retsinfo_document_pages,
+)
 from src.assets.retsinformation.pages import retsinfo_sitemap_page
 from src.assets.retsinformation.sitemap import retsinfo_sitemap_index
 from src.resources import LearningStorageResource, RetsinformationHttpResource
@@ -53,6 +58,9 @@ defs = Definitions(
         yearly_parsed_titles_from_files,
         retsinfo_sitemap_index,
         retsinfo_sitemap_page,
+        fc_document_pages,
+        ilt_document_pages,
+        retsinfo_document_pages,
     ],
     asset_checks=[parsed_titles_are_not_empty],
     jobs=[learning_file_pipeline_job],
