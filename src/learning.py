@@ -2,6 +2,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dagster import AssetCheckResult, AssetExecutionContext, Config, asset, asset_check
+from dagster._core.definitions.partitions.definition.time_window_subclasses import (
+    DailyPartitionsDefinition,
+)
 
 from src.resources import LearningStorageResource
 
@@ -27,6 +30,9 @@ class GreetingConfig(Config):
 
 class FakeSourceConfig(Config):
     page_count: int = 3
+
+
+daily_partitions = DailyPartitionsDefinition(start_date="2026-01-01")
 
 
 @asset(group_name="learning")
@@ -254,3 +260,24 @@ def parsed_titles_are_not_empty(
             "title_count": title_count,
         },
     )
+
+
+@asset(group_name="learning", partitions_def=daily_partitions)
+def daily_learning_note(
+    context: AssetExecutionContext,
+    learning_storage: LearningStorageResource,
+) -> str:
+    partition_date = context.partition_key
+    output_path = learning_storage.path_for(f"daily_notes/{partition_date}.txt")
+
+    message = f"This asset ran for partition {partition_date}"
+    output_path.write_text(message, encoding="utf-8")
+
+    context.add_output_metadata(
+        {
+            "partition_date": partition_date,
+            "output_path": str(output_path),
+        }
+    )
+
+    return str(output_path)

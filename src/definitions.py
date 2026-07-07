@@ -2,6 +2,7 @@ from dagster import Definitions, ScheduleDefinition, define_asset_job
 
 from learning import (
     configurable_greeting,
+    daily_learning_note,
     excited_hello,
     fake_raw_page_files,
     fake_raw_pages,
@@ -20,7 +21,7 @@ learning_file_pipeline_job = define_asset_job(
 )
 
 learning_file_pipeline_schedule = ScheduleDefinition(
-    job=learning_file_pipeline_job, cron_schedule="* * * * *"
+    job=learning_file_pipeline_job, cron_schedule="30 * * * *"
 )
 
 defs = Definitions(
@@ -35,6 +36,7 @@ defs = Definitions(
         page_summary,
         fake_raw_page_files,
         parsed_titles_from_files,
+        daily_learning_note,
     ],
     asset_checks=[parsed_titles_are_not_empty],
     jobs=[learning_file_pipeline_job],
