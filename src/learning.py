@@ -72,3 +72,78 @@ def greeting_file(
     )
 
     return str(output_path)
+
+
+@asset(group_name="learning")
+def fake_source_urls() -> list[str]:
+    return [
+        "https://example.com/law/1",
+        "https://example.com/law/2",
+        "https://example.com/law/3",
+    ]
+
+
+@asset(group_name="learning")
+def fake_raw_pages(
+    context: AssetExecutionContext,
+    fake_source_urls: list[str],
+) -> list[dict[str, str]]:
+    pages = []
+
+    for url in fake_source_urls:
+        page = {
+            "url": url,
+            "html": f"<html><title>Page for {url}</title><body>Some legal text</body></html>",
+        }
+        pages.append(page)
+
+    context.add_output_metadata(
+        {
+            "page_count": len(pages),
+            "urls": fake_source_urls,
+        }
+    )
+
+    return pages
+
+
+@asset(group_name="learning")
+def parsed_page_titles(
+    context: AssetExecutionContext,
+    fake_raw_pages: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    titles = []
+
+    for page in fake_raw_pages:
+        html = page["html"]
+        title = html.split("<title>")[1].split("</title>")[0]
+
+        titles.append(
+            {
+                "url": page["url"],
+                "title": title,
+            }
+        )
+
+    context.add_output_metadata(
+        {
+            "title_count": len(titles),
+        }
+    )
+
+    return titles
+
+
+@asset(group_name="learning")
+def page_summary(
+    context: AssetExecutionContext,
+    parsed_page_titles: list[dict[str, str]],
+) -> dict[str, int]:
+    summary = {
+        "pages_seen": len(parsed_page_titles),
+        "titles_seen": sum(1 for page in parsed_page_titles if page["title"]),
+    }
+
+    context.add_output_metadata(summary)
+
+    return summary
