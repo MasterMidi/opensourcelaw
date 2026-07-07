@@ -8,6 +8,10 @@ class GreetingConfig(Config):
     excited: bool = True
 
 
+class FakeSourceConfig(Config):
+    page_count: int = 3
+
+
 @asset(group_name="learning")
 def hello_dagster(context: AssetExecutionContext) -> str:
     message = "Hello from Dagster"
@@ -75,12 +79,17 @@ def greeting_file(
 
 
 @asset(group_name="learning")
-def fake_source_urls() -> list[str]:
-    return [
-        "https://example.com/law/1",
-        "https://example.com/law/2",
-        "https://example.com/law/3",
+def fake_source_urls(
+    context: AssetExecutionContext, config: FakeSourceConfig
+) -> list[str]:
+    urls = [
+        f"https://example.com/law/{page_number}"
+        for page_number in range(1, config.page_count + 1)
     ]
+
+    context.add_output_metadata({"page_count": config.page_count, "urls": urls})
+
+    return urls
 
 
 @asset(group_name="learning")
