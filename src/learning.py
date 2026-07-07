@@ -1,9 +1,23 @@
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from dagster import AssetExecutionContext, Config, asset
 
 from src.resources import LearningStorageResource
+
+
+@dataclass
+class SavedPage:
+    url: str
+    file_path: str
+    bytes_written: int
+
+
+@dataclass
+class ParsedTitle:
+    url: str
+    file_path: str
+    title: str
 
 
 class GreetingConfig(Config):
@@ -166,7 +180,7 @@ def fake_raw_page_files(
     context: AssetExecutionContext,
     fake_source_urls: list[str],
     learning_storage: LearningStorageResource,
-) -> list[dict[str, Any]]:
+) -> list[SavedPage]:
     saved_pages = []
 
     for index, url in enumerate(fake_source_urls, start=1):
@@ -176,17 +190,17 @@ def fake_raw_page_files(
         output_path.write_text(html, encoding="utf-8")
 
         saved_pages.append(
-            {
-                "url": url,
-                "file_path": str(output_path),
-                "bytes_written": output_path.stat().st_size,
-            }
+            SavedPage(
+                url=url,
+                file_path=str(output_path),
+                bytes_written=output_path.stat().st_size,
+            )
         )
 
     context.add_output_metadata(
         {
             "file_count": len(saved_pages),
-            "total_bytes": sum(page["bytes_written"] for page in saved_pages),
+            "total_bytes": sum(page.bytes_written for page in saved_pages),
         }
     )
 
@@ -196,12 +210,12 @@ def fake_raw_page_files(
 @asset(group_name="learning")
 def parsed_titles_from_files(
     context: AssetExecutionContext,
-    fake_raw_page_files: list[dict[str, Any]],
-) -> list[dict[str, str]]:
+    fake_raw_page_files: list[SavedPage],
+) -> list[ParsedTitle]:
     titles = []
 
     for saved_page in fake_raw_page_files:
-        file_path = str(saved_page["file_path"])
+        file_path = saved_page.file_path
         html = Path(file_path).read_text(encoding="utf-8")
 
         if "<title>" not in html or "</title>" not in html:
@@ -211,11 +225,11 @@ def parsed_titles_from_files(
         title = html.split("<title>")[1].split("</title>")[0]
 
         titles.append(
-            {
-                "url": str(saved_page["url"]),
-                "file_path": file_path,
-                "title": title,
-            }
+            ParsedTitle(
+                url=str(saved_page.url),
+                file_path=file_path,
+                title=title,
+            )
         )
 
     context.add_output_metadata(
