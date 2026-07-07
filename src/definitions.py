@@ -10,6 +10,7 @@ from learning import (
     hello_dagster,
     page_summary,
     parsed_page_titles,
+    parsed_titles_are_not_empty,
     parsed_titles_from_files,
 )
 from src.resources import LearningStorageResource
@@ -27,5 +28,6 @@ defs = Definitions(
         fake_raw_page_files,
         parsed_titles_from_files,
     ],
+    asset_checks=[parsed_titles_are_not_empty],
     resources={"learning_storage": LearningStorageResource()},
 )

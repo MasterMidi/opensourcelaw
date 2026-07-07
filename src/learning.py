@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from dagster import AssetExecutionContext, Config, asset
+from dagster import AssetCheckResult, AssetExecutionContext, Config, asset, asset_check
 
 from src.resources import LearningStorageResource
 
@@ -240,3 +240,17 @@ def parsed_titles_from_files(
     )
 
     return titles
+
+
+@asset_check(asset=parsed_titles_from_files)
+def parsed_titles_are_not_empty(
+    parsed_titles_from_files: list[ParsedTitle],
+) -> AssetCheckResult:
+    title_count = len(parsed_titles_from_files)
+
+    return AssetCheckResult(
+        passed=title_count > 0,
+        metadata={
+            "title_count": title_count,
+        },
+    )
