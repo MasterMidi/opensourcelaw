@@ -3,9 +3,7 @@ from time import sleep
 
 from dagster import (
     AssetExecutionContext,
-    AssetIn,
     Config,
-    IdentityPartitionMapping,
     MetadataValue,
     asset,
 )
@@ -97,9 +95,6 @@ def _fetch_document_pages(
 @asset(
     group_name="retsinformation",
     partitions_def=retsinfo_sitemap_page_partitions,
-    ins={
-        "retsinfo_sitemap_page": AssetIn(partition_mapping=IdentityPartitionMapping())
-    },
 )
 def fc_document_pages(
     context: AssetExecutionContext,
@@ -119,9 +114,6 @@ def fc_document_pages(
 @asset(
     group_name="retsinformation",
     partitions_def=retsinfo_sitemap_page_partitions,
-    ins={
-        "retsinfo_sitemap_page": AssetIn(partition_mapping=IdentityPartitionMapping())
-    },
 )
 def ilt_document_pages(
     context: AssetExecutionContext,
@@ -141,9 +133,6 @@ def ilt_document_pages(
 @asset(
     group_name="retsinformation",
     partitions_def=retsinfo_sitemap_page_partitions,
-    ins={
-        "retsinfo_sitemap_page": AssetIn(partition_mapping=IdentityPartitionMapping())
-    },
 )
 def retsinfo_document_pages(
     context: AssetExecutionContext,
