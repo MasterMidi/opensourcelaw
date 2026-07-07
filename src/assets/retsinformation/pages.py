@@ -1,5 +1,6 @@
+from collections import Counter
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import httpx
 from dagster import AssetExecutionContext, StaticPartitionsDefinition, asset
@@ -10,10 +11,34 @@ from src.assets.retsinformation.sitemap import SitemapPageRef
 SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
 
-@dataclass
+@dataclass(frozen=True)
+class EliDocumentUrlParts:
+    id: str
+    year: str
+    type: str
+
+
+@dataclass(frozen=True)
 class SitemapEntry:
     url: str
     lastmod: str
+    id: str
+    year: str
+    type: str
+
+
+def parse_eli_document_url(url: str) -> EliDocumentUrlParts | None:
+    parts = [part for part in urlparse(url).path.split("/") if part]
+
+    if len(parts) != 4 or parts[0] != "eli":
+        return None
+
+    doc_type, year, document_id = parts[1:]
+
+    if not year.isdigit():
+        return None
+
+    return EliDocumentUrlParts(id=document_id, year=year, type=doc_type)
 
 
 retsinfo_sitemap_page_partitions = StaticPartitionsDefinition(
@@ -50,21 +75,31 @@ def retsinfo_sitemap_page(
         if lastmod_element is None or lastmod_element.text is None:
             continue
 
-        modified = lastmod_element.text.strip()
         url_str = loc_element.text.strip()
-        # url = urlparse(url_str)
-        # split_path = url.path.rsplit(sep="/", maxsplit=4)
-        # id = split_path[0]
-        # year = split_path[1]
-        # doc_type = split_path[2]
+        url_parts = parse_eli_document_url(url_str)
 
-        entry = SitemapEntry(url=url_str, lastmod=modified)
-        context.log.debug(f"Found entry. URL: {entry.url}")
+        if url_parts is None:
+            context.log.warning(f"Skipping unrecognized ELI URL: {url_str}")
+            continue
+
+        entry = SitemapEntry(
+            url=url_str,
+            lastmod=lastmod_element.text.strip(),
+            id=url_parts.id,
+            year=url_parts.year,
+            type=url_parts.type,
+        )
+        context.log.debug(
+            f"Found {entry.type} entry {entry.year}/{entry.id}. URL: {entry.url}"
+        )
         entries.append(entry)
+
+    type_counts = Counter(entry.type for entry in entries)
 
     context.add_output_metadata(
         {
             "entry_count": len(entries),
+            "type_counts": dict(sorted(type_counts.items())),
         }
     )
 
