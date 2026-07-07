@@ -1,4 +1,4 @@
-from dagster import Definitions
+from dagster import Definitions, define_asset_job
 
 from learning import (
     configurable_greeting,
@@ -15,6 +15,10 @@ from learning import (
 )
 from src.resources import LearningStorageResource
 
+learning_file_pipeline_job = define_asset_job(
+    name="learning_file_pipeline", selection="*parsed_titles_from_files"
+)
+
 defs = Definitions(
     assets=[
         hello_dagster,
@@ -29,5 +33,6 @@ defs = Definitions(
         parsed_titles_from_files,
     ],
     asset_checks=[parsed_titles_are_not_empty],
+    jobs=[learning_file_pipeline_job],
     resources={"learning_storage": LearningStorageResource()},
 )
