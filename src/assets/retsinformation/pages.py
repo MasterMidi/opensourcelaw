@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from urllib.parse import urlparse
 
-from dagster import AssetExecutionContext, StaticPartitionsDefinition, asset
+from dagster import AssetExecutionContext, asset
 from defusedxml import ElementTree
 
 from src.assets.retsinformation.sitemap import SitemapPageRef
@@ -67,11 +67,6 @@ def parse_eli_document_url(url: str) -> EliDocumentUrlParts | None:
         return None
 
     return EliDocumentUrlParts(id=document_id, year=year, type=doc_type)
-
-
-retsinfo_sitemap_page_partitions = StaticPartitionsDefinition(
-    [str(page) for page in range(1, 22)]
-)
 
 
 @asset(group_name="retsinformation")

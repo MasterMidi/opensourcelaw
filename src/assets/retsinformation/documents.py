@@ -1,19 +1,29 @@
 from dataclasses import dataclass
+from datetime import date
 from time import sleep
 
 from dagster import (
     AssetExecutionContext,
     Config,
     MetadataValue,
+    StaticPartitionsDefinition,
     asset,
 )
 
-from src.assets.retsinformation.pages import (
-    DocumentType,
-    SitemapEntry,
-    retsinfo_sitemap_page_partitions,
-)
+from src.assets.retsinformation.pages import DocumentType, SitemapEntry
 from src.resources import RetsinformationHttpResource
+
+
+document_year_partitions = StaticPartitionsDefinition(
+    [str(year) for year in range(1985, date.today().year + 1)]
+)
+
+
+@dataclass(frozen=True)
+class DocumentRefSet:
+    document_type: DocumentType
+    year: str
+    entries: list[SitemapEntry]
 
 
 @dataclass(frozen=True)
@@ -25,37 +35,71 @@ class DocumentPage:
     bytes_downloaded: int
 
 
+@dataclass(frozen=True)
+class DocumentPageBatch:
+    document_type: DocumentType
+    year: str
+    pages: list[DocumentPage]
+
+
 class DocumentFetchConfig(Config):
     max_documents: int | None = 25
     request_delay_seconds: float = 0.0
 
 
-def _fetch_document_pages(
+def _build_document_refs(
     *,
     context: AssetExecutionContext,
     entries: list[SitemapEntry],
     document_type: DocumentType,
+) -> DocumentRefSet:
+    year = context.partition_key
+    refs = [
+        entry for entry in entries if entry.type == document_type and entry.year == year
+    ]
+
+    context.log.info(
+        f"Found {len(refs)} {document_type.value} document refs for year {year}"
+    )
+
+    metadata = {
+        "document_type": document_type.value,
+        "year": year,
+        "ref_count": len(refs),
+    }
+
+    if refs:
+        metadata["first_url"] = MetadataValue.url(refs[0].url)
+
+    context.add_output_metadata(metadata)
+
+    return DocumentRefSet(document_type=document_type, year=year, entries=refs)
+
+
+def _fetch_document_pages(
+    *,
+    context: AssetExecutionContext,
+    refs: DocumentRefSet,
     retsinformation_http: RetsinformationHttpResource,
     config: DocumentFetchConfig,
-) -> list[DocumentPage]:
-    matching_entries = [entry for entry in entries if entry.type == document_type]
+) -> DocumentPageBatch:
     selected_entries = (
-        matching_entries[: config.max_documents]
+        refs.entries[: config.max_documents]
         if config.max_documents is not None
-        else matching_entries
+        else refs.entries
     )
 
     context.log.info(
-        f"Fetching {len(selected_entries)} of {len(matching_entries)} {document_type} "
-        f"documents from sitemap partition {context.partition_key}"
+        f"Fetching {len(selected_entries)} of {len(refs.entries)} "
+        f"{refs.document_type.value} documents for year {refs.year}"
     )
 
     pages: list[DocumentPage] = []
 
     for index, entry in enumerate(selected_entries, start=1):
         context.log.info(
-            f"Fetching {document_type} document {index}/{len(selected_entries)}: "
-            f"{entry.year}/{entry.id}"
+            f"Fetching {refs.document_type.value} document {index}/"
+            f"{len(selected_entries)}: {entry.year}/{entry.id}"
         )
 
         response = retsinformation_http.get(entry.url)
@@ -75,8 +119,9 @@ def _fetch_document_pages(
             sleep(config.request_delay_seconds)
 
     metadata = {
-        "document_type": document_type,
-        "available_entry_count": len(matching_entries),
+        "document_type": refs.document_type.value,
+        "year": refs.year,
+        "available_ref_count": len(refs.entries),
         "fetched_count": len(pages),
         "bytes_downloaded": sum(page.bytes_downloaded for page in pages),
         "max_documents": config.max_documents
@@ -89,61 +134,89 @@ def _fetch_document_pages(
 
     context.add_output_metadata(metadata)
 
-    return pages
+    return DocumentPageBatch(
+        document_type=refs.document_type,
+        year=refs.year,
+        pages=pages,
+    )
 
 
-@asset(
-    group_name="retsinformation",
-    partitions_def=retsinfo_sitemap_page_partitions,
-)
-def fc_document_pages(
+@asset(group_name="retsinformation", partitions_def=document_year_partitions)
+def fc_document_refs(
     context: AssetExecutionContext,
-    config: DocumentFetchConfig,
     retsinfo_sitemap_page: list[SitemapEntry],
-    retsinformation_http: RetsinformationHttpResource,
-) -> list[DocumentPage]:
-    return _fetch_document_pages(
+) -> DocumentRefSet:
+    return _build_document_refs(
         context=context,
         entries=retsinfo_sitemap_page,
         document_type=DocumentType.FC,
-        retsinformation_http=retsinformation_http,
-        config=config,
     )
 
 
-@asset(
-    group_name="retsinformation",
-    partitions_def=retsinfo_sitemap_page_partitions,
-)
-def ilt_document_pages(
+@asset(group_name="retsinformation", partitions_def=document_year_partitions)
+def ilt_document_refs(
     context: AssetExecutionContext,
-    config: DocumentFetchConfig,
     retsinfo_sitemap_page: list[SitemapEntry],
-    retsinformation_http: RetsinformationHttpResource,
-) -> list[DocumentPage]:
-    return _fetch_document_pages(
+) -> DocumentRefSet:
+    return _build_document_refs(
         context=context,
         entries=retsinfo_sitemap_page,
         document_type=DocumentType.ILT,
+    )
+
+
+@asset(group_name="retsinformation", partitions_def=document_year_partitions)
+def retsinfo_document_refs(
+    context: AssetExecutionContext,
+    retsinfo_sitemap_page: list[SitemapEntry],
+) -> DocumentRefSet:
+    return _build_document_refs(
+        context=context,
+        entries=retsinfo_sitemap_page,
+        document_type=DocumentType.RETSINFO,
+    )
+
+
+@asset(group_name="retsinformation", partitions_def=document_year_partitions)
+def fc_document_pages(
+    context: AssetExecutionContext,
+    config: DocumentFetchConfig,
+    fc_document_refs: DocumentRefSet,
+    retsinformation_http: RetsinformationHttpResource,
+) -> DocumentPageBatch:
+    return _fetch_document_pages(
+        context=context,
+        refs=fc_document_refs,
         retsinformation_http=retsinformation_http,
         config=config,
     )
 
 
-@asset(
-    group_name="retsinformation",
-    partitions_def=retsinfo_sitemap_page_partitions,
-)
+@asset(group_name="retsinformation", partitions_def=document_year_partitions)
+def ilt_document_pages(
+    context: AssetExecutionContext,
+    config: DocumentFetchConfig,
+    ilt_document_refs: DocumentRefSet,
+    retsinformation_http: RetsinformationHttpResource,
+) -> DocumentPageBatch:
+    return _fetch_document_pages(
+        context=context,
+        refs=ilt_document_refs,
+        retsinformation_http=retsinformation_http,
+        config=config,
+    )
+
+
+@asset(group_name="retsinformation", partitions_def=document_year_partitions)
 def retsinfo_document_pages(
     context: AssetExecutionContext,
     config: DocumentFetchConfig,
-    retsinfo_sitemap_page: list[SitemapEntry],
+    retsinfo_document_refs: DocumentRefSet,
     retsinformation_http: RetsinformationHttpResource,
-) -> list[DocumentPage]:
+) -> DocumentPageBatch:
     return _fetch_document_pages(
         context=context,
-        entries=retsinfo_sitemap_page,
-        document_type=DocumentType.RETSINFO,
+        refs=retsinfo_document_refs,
         retsinformation_http=retsinformation_http,
         config=config,
     )

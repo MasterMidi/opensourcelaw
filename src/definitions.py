@@ -22,8 +22,11 @@ from learning import (
 )
 from src.assets.retsinformation.documents import (
     fc_document_pages,
+    fc_document_refs,
     ilt_document_pages,
+    ilt_document_refs,
     retsinfo_document_pages,
+    retsinfo_document_refs,
 )
 from src.assets.retsinformation.pages import retsinfo_sitemap_page
 from src.assets.retsinformation.sitemap import retsinfo_sitemap_index
@@ -58,8 +61,11 @@ defs = Definitions(
         yearly_parsed_titles_from_files,
         retsinfo_sitemap_index,
         retsinfo_sitemap_page,
+        fc_document_refs,
         fc_document_pages,
+        ilt_document_refs,
         ilt_document_pages,
+        retsinfo_document_refs,
         retsinfo_document_pages,
     ],
     asset_checks=[parsed_titles_are_not_empty],
