@@ -24,3 +24,21 @@ class RetsinformationHttpResource(ConfigurableResource):
             follow_redirects=follow_redirects,
             headers={"User-Agent": self.user_agent},
         )
+
+    def post_json(
+        self,
+        url: str,
+        *,
+        json: object,
+        follow_redirects: bool = True,
+    ) -> httpx.Response:
+        return httpx.post(
+            url,
+            json=json,
+            timeout=self.timeout_seconds,
+            follow_redirects=follow_redirects,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": self.user_agent,
+            },
+        )
