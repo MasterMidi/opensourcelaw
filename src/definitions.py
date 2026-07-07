@@ -1,4 +1,4 @@
-from dagster import Definitions, define_asset_job
+from dagster import Definitions, ScheduleDefinition, define_asset_job
 
 from learning import (
     configurable_greeting,
@@ -19,6 +19,10 @@ learning_file_pipeline_job = define_asset_job(
     name="learning_file_pipeline", selection="*parsed_titles_from_files"
 )
 
+learning_file_pipeline_schedule = ScheduleDefinition(
+    job=learning_file_pipeline_job, cron_schedule="* * * * *"
+)
+
 defs = Definitions(
     assets=[
         hello_dagster,
@@ -34,5 +38,6 @@ defs = Definitions(
     ],
     asset_checks=[parsed_titles_are_not_empty],
     jobs=[learning_file_pipeline_job],
+    schedules=[learning_file_pipeline_schedule],
     resources={"learning_storage": LearningStorageResource()},
 )
