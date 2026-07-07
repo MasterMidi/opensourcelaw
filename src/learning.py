@@ -1,9 +1,13 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from dagster import AssetCheckResult, AssetExecutionContext, Config, asset, asset_check
-from dagster._core.definitions.partitions.definition.time_window_subclasses import (
+from dagster import (
+    AssetCheckResult,
+    AssetExecutionContext,
+    Config,
     DailyPartitionsDefinition,
+    asset,
+    asset_check,
 )
 
 from src.resources import LearningStorageResource
@@ -32,7 +36,7 @@ class FakeSourceConfig(Config):
     page_count: int = 3
 
 
-daily_partitions = DailyPartitionsDefinition(start_date="2026-01-01")
+daily_partitions = DailyPartitionsDefinition(start_date="2026-07-01")
 
 
 @asset(group_name="learning")
@@ -281,3 +285,93 @@ def daily_learning_note(
     )
 
     return str(output_path)
+
+
+@asset(group_name="learning", partitions_def=daily_partitions)
+def daily_fake_source_urls(context: AssetExecutionContext) -> list[str]:
+    partition_date = context.partition_key
+
+    urls = [
+        f"https://example.com/{partition_date}/law/1",
+        f"https://example.com/{partition_date}/law/2",
+        f"https://example.com/{partition_date}/law/3",
+    ]
+
+    context.add_output_metadata(
+        {
+            "partition_date": partition_date,
+            "url_count": len(urls),
+        }
+    )
+
+    return urls
+
+
+@asset(group_name="learning", partitions_def=daily_partitions)
+def daily_fake_raw_page_files(
+    context: AssetExecutionContext,
+    daily_fake_source_urls: list[str],
+    learning_storage: LearningStorageResource,
+) -> list[SavedPage]:
+    partition_date = context.partition_key
+    saved_pages = []
+
+    for index, url in enumerate(daily_fake_source_urls, start=1):
+        html = f"<html><title>Page for {url}</title><body>Some legal text</body></html>"
+        output_path = learning_storage.path_for(
+            f"daily_raw_pages/{partition_date}/page_{index}.html"
+        )
+
+        output_path.write_text(html, encoding="utf-8")
+
+        saved_pages.append(
+            SavedPage(
+                url=url,
+                file_path=str(output_path),
+                bytes_written=output_path.stat().st_size,
+            )
+        )
+
+    context.add_output_metadata(
+        {
+            "partition_date": partition_date,
+            "file_count": len(saved_pages),
+            "total_bytes": sum(page.bytes_written for page in saved_pages),
+        }
+    )
+
+    return saved_pages
+
+
+@asset(group_name="learning", partitions_def=daily_partitions)
+def daily_parsed_titles_from_files(
+    context: AssetExecutionContext,
+    daily_fake_raw_page_files: list[SavedPage],
+) -> list[ParsedTitle]:
+    titles = []
+
+    for saved_page in daily_fake_raw_page_files:
+        html = Path(saved_page.file_path).read_text(encoding="utf-8")
+
+        if "<title>" not in html or "</title>" not in html:
+            context.log.warning(f"Missing title in {saved_page.file_path}")
+            continue
+
+        title = html.split("<title>")[1].split("</title>")[0]
+
+        titles.append(
+            ParsedTitle(
+                url=saved_page.url,
+                file_path=saved_page.file_path,
+                title=title,
+            )
+        )
+
+    context.add_output_metadata(
+        {
+            "partition_date": context.partition_key,
+            "title_count": len(titles),
+        }
+    )
+
+    return titles
