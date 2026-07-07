@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from dagster import AssetExecutionContext, Config, asset
 
@@ -165,39 +166,53 @@ def fake_raw_page_files(
     context: AssetExecutionContext,
     fake_source_urls: list[str],
     learning_storage: LearningStorageResource,
-) -> list[str]:
-    file_paths = []
+) -> list[dict[str, Any]]:
+    saved_pages = []
 
     for index, url in enumerate(fake_source_urls, start=1):
         html = f"<html><title>Page for {url}</title><body>Some legal text</body></html>"
         output_path = learning_storage.path_for(f"raw_pages/page_{index}.html")
 
         output_path.write_text(html, encoding="utf-8")
-        file_paths.append(str(output_path))
+
+        saved_pages.append(
+            {
+                "url": url,
+                "file_path": str(output_path),
+                "bytes_written": output_path.stat().st_size,
+            }
+        )
 
     context.add_output_metadata(
         {
-            "file_count": len(file_paths),
-            "file_paths": file_paths,
+            "file_count": len(saved_pages),
+            "total_bytes": sum(page["bytes_written"] for page in saved_pages),
         }
     )
 
-    return file_paths
+    return saved_pages
 
 
 @asset(group_name="learning")
 def parsed_titles_from_files(
     context: AssetExecutionContext,
-    fake_raw_page_files: list[str],
+    fake_raw_page_files: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
     titles = []
 
-    for file_path in fake_raw_page_files:
+    for saved_page in fake_raw_page_files:
+        file_path = str(saved_page["file_path"])
         html = Path(file_path).read_text(encoding="utf-8")
+
+        if "<title>" not in html or "</title>" not in html:
+            context.log.warning(f"Missing title in {file_path}")
+            continue
+
         title = html.split("<title>")[1].split("</title>")[0]
 
         titles.append(
             {
+                "url": str(saved_page["url"]),
                 "file_path": file_path,
                 "title": title,
             }
@@ -206,6 +221,7 @@ def parsed_titles_from_files(
     context.add_output_metadata(
         {
             "title_count": len(titles),
+            "input_file_count": len(fake_raw_page_files),
         }
     )
 
