@@ -6,6 +6,7 @@ from dagster import (
     AssetExecutionContext,
     Config,
     DailyPartitionsDefinition,
+    StaticPartitionsDefinition,
     asset,
     asset_check,
 )
@@ -37,6 +38,8 @@ class FakeSourceConfig(Config):
 
 
 daily_partitions = DailyPartitionsDefinition(start_date="2026-07-01")
+
+year_partitions = StaticPartitionsDefinition(["2022", "2023", "2024", "2025", "2026"])
 
 
 @asset(group_name="learning")
@@ -370,6 +373,97 @@ def daily_parsed_titles_from_files(
     context.add_output_metadata(
         {
             "partition_date": context.partition_key,
+            "title_count": len(titles),
+        }
+    )
+
+    return titles
+
+
+@asset(group_name="learning", partitions_def=year_partitions)
+def yearly_fake_source_urls(context: AssetExecutionContext) -> list[str]:
+    year = context.partition_key
+
+    urls = [
+        f"https://example.com/law/{year}/1",
+        f"https://example.com/law/{year}/2",
+        f"https://example.com/law/{year}/3",
+    ]
+
+    context.add_output_metadata(
+        {
+            "year": year,
+            "url_count": len(urls),
+            "urls": urls,
+        }
+    )
+
+    return urls
+
+
+@asset(group_name="learning", partitions_def=year_partitions)
+def yearly_fake_raw_page_files(
+    context: AssetExecutionContext,
+    yearly_fake_source_urls: list[str],
+    learning_storage: LearningStorageResource,
+) -> list[SavedPage]:
+    year = context.partition_key
+    saved_pages = []
+
+    for index, url in enumerate(yearly_fake_source_urls, start=1):
+        html = f"<html><title>Law from {year}: {url}</title><body>Some legal text</body></html>"
+        output_path = learning_storage.path_for(
+            f"yearly_raw_pages/{year}/page_{index}.html"
+        )
+
+        output_path.write_text(html, encoding="utf-8")
+
+        saved_pages.append(
+            SavedPage(
+                url=url,
+                file_path=str(output_path),
+                bytes_written=output_path.stat().st_size,
+            )
+        )
+
+    context.add_output_metadata(
+        {
+            "year": year,
+            "file_count": len(saved_pages),
+            "total_bytes": sum(page.bytes_written for page in saved_pages),
+        }
+    )
+
+    return saved_pages
+
+
+@asset(group_name="learning", partitions_def=year_partitions)
+def yearly_parsed_titles_from_files(
+    context: AssetExecutionContext,
+    yearly_fake_raw_page_files: list[SavedPage],
+) -> list[ParsedTitle]:
+    titles = []
+
+    for saved_page in yearly_fake_raw_page_files:
+        html = Path(saved_page.file_path).read_text(encoding="utf-8")
+
+        if "<title>" not in html or "</title>" not in html:
+            context.log.warning(f"Missing title in {saved_page.file_path}")
+            continue
+
+        title = html.split("<title>")[1].split("</title>")[0]
+
+        titles.append(
+            ParsedTitle(
+                url=saved_page.url,
+                file_path=saved_page.file_path,
+                title=title,
+            )
+        )
+
+    context.add_output_metadata(
+        {
+            "year": context.partition_key,
             "title_count": len(titles),
         }
     )

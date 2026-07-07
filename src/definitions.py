@@ -16,6 +16,9 @@ from learning import (
     parsed_page_titles,
     parsed_titles_are_not_empty,
     parsed_titles_from_files,
+    yearly_fake_raw_page_files,
+    yearly_fake_source_urls,
+    yearly_parsed_titles_from_files,
 )
 from src.resources import LearningStorageResource
 
@@ -43,6 +46,9 @@ defs = Definitions(
         daily_fake_source_urls,
         daily_fake_raw_page_files,
         daily_parsed_titles_from_files,
+        yearly_fake_source_urls,
+        yearly_fake_raw_page_files,
+        yearly_parsed_titles_from_files,
     ],
     asset_checks=[parsed_titles_are_not_empty],
     jobs=[learning_file_pipeline_job],
