@@ -2,11 +2,11 @@ from collections import Counter
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-import httpx
 from dagster import AssetExecutionContext, StaticPartitionsDefinition, asset
 from defusedxml import ElementTree
 
 from src.assets.retsinformation.sitemap import SitemapPageRef
+from src.resources import RetsinformationHttpResource
 
 SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
@@ -48,15 +48,15 @@ retsinfo_sitemap_page_partitions = StaticPartitionsDefinition(
 
 @asset(group_name="retsinformation", partitions_def=retsinfo_sitemap_page_partitions)
 def retsinfo_sitemap_page(
-    context: AssetExecutionContext, retsinfo_sitemap_index: list[SitemapPageRef]
+    context: AssetExecutionContext,
+    retsinfo_sitemap_index: list[SitemapPageRef],
+    retsinformation_http: RetsinformationHttpResource,
 ) -> list[SitemapEntry]:
     page = context.partition_key
 
-    response = httpx.get(
+    response = retsinformation_http.get(
         next(x for x in retsinfo_sitemap_index if x.page == page).url,
-        timeout=30.0,
         follow_redirects=True,
-        headers={"User-Agent": "opensourcelaw/0.1"},
     )
 
     response.raise_for_status()

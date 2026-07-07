@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
 
-import httpx
 from dagster import AssetExecutionContext, asset
 from defusedxml import ElementTree
+
+from src.resources import RetsinformationHttpResource
 
 RETSINFO_ELI_SITEMAP_URL = "https://www.retsinformation.dk/eli/sitemap.xml"
 SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
@@ -18,12 +19,9 @@ class SitemapPageRef:
 @asset(group_name="retsinformation")
 def retsinfo_sitemap_index(
     context: AssetExecutionContext,
+    retsinformation_http: RetsinformationHttpResource,
 ) -> list[SitemapPageRef]:
-    response = httpx.get(
-        RETSINFO_ELI_SITEMAP_URL,
-        timeout=30.0,
-        headers={"User-Agent": "opensourcelaw/0.1"},
-    )
+    response = retsinformation_http.get(RETSINFO_ELI_SITEMAP_URL)
 
     response.raise_for_status()
 

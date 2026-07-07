@@ -22,7 +22,7 @@ from learning import (
 )
 from src.assets.retsinformation.pages import retsinfo_sitemap_page
 from src.assets.retsinformation.sitemap import retsinfo_sitemap_index
-from src.resources import LearningStorageResource
+from src.resources import LearningStorageResource, RetsinformationHttpResource
 
 learning_file_pipeline_job = define_asset_job(
     name="learning_file_pipeline", selection="*parsed_titles_from_files"
@@ -57,5 +57,8 @@ defs = Definitions(
     asset_checks=[parsed_titles_are_not_empty],
     jobs=[learning_file_pipeline_job],
     schedules=[learning_file_pipeline_schedule],
-    resources={"learning_storage": LearningStorageResource()},
+    resources={
+        "learning_storage": LearningStorageResource(),
+        "retsinformation_http": RetsinformationHttpResource(),
+    },
 )
