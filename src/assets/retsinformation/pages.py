@@ -1,5 +1,6 @@
 from collections import Counter
 from dataclasses import dataclass
+from enum import StrEnum
 from urllib.parse import urlparse
 
 from dagster import AssetExecutionContext, StaticPartitionsDefinition, asset
@@ -11,11 +12,25 @@ from src.resources import RetsinformationHttpResource
 SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
 
+class DocumentType(StrEnum):
+    FC = "fc"
+    FOB = "fob"
+    ILT = "ilt"
+    LTA = "lta"
+    LTB = "ltb"
+    LTC = "ltc"
+    MT = "mt"
+    RETSINFO = "retsinfo"
+
+
+DOCUMENT_TYPES_WITH_ID_PREFIX_YEAR = {DocumentType.FC}
+
+
 @dataclass(frozen=True)
 class EliDocumentUrlParts:
     id: str
     year: str
-    type: str
+    type: DocumentType
 
 
 @dataclass(frozen=True)
@@ -24,18 +39,31 @@ class SitemapEntry:
     lastmod: str
     id: str
     year: str
-    type: str
+    type: DocumentType
 
 
 def parse_eli_document_url(url: str) -> EliDocumentUrlParts | None:
     parts = [part for part in urlparse(url).path.split("/") if part]
 
-    if len(parts) != 4 or parts[0] != "eli":
+    if len(parts) not in {3, 4} or parts[0] != "eli":
         return None
 
-    doc_type, year, document_id = parts[1:]
+    try:
+        doc_type = DocumentType(parts[1])
+    except ValueError:
+        return None
 
-    if not year.isdigit():
+    if len(parts) == 3:
+        document_id = parts[2]
+
+        if doc_type not in DOCUMENT_TYPES_WITH_ID_PREFIX_YEAR:
+            return None
+
+        year = document_id[:4]
+    else:
+        year, document_id = parts[2:]
+
+    if len(year) != 4 or not year.isdigit():
         return None
 
     return EliDocumentUrlParts(id=document_id, year=year, type=doc_type)
@@ -94,7 +122,7 @@ def retsinfo_sitemap_page(
         )
         entries.append(entry)
 
-    type_counts = Counter(entry.type for entry in entries)
+    type_counts = Counter(entry.type.value for entry in entries)
 
     context.add_output_metadata(
         {

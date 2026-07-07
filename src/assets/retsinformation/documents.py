@@ -11,6 +11,7 @@ from dagster import (
 )
 
 from src.assets.retsinformation.pages import (
+    DocumentType,
     SitemapEntry,
     retsinfo_sitemap_page_partitions,
 )
@@ -35,7 +36,7 @@ def _fetch_document_pages(
     *,
     context: AssetExecutionContext,
     entries: list[SitemapEntry],
-    document_type: str,
+    document_type: DocumentType,
     retsinformation_http: RetsinformationHttpResource,
     config: DocumentFetchConfig,
 ) -> list[DocumentPage]:
@@ -109,7 +110,7 @@ def fc_document_pages(
     return _fetch_document_pages(
         context=context,
         entries=retsinfo_sitemap_page,
-        document_type="fc",
+        document_type=DocumentType.FC,
         retsinformation_http=retsinformation_http,
         config=config,
     )
@@ -131,7 +132,7 @@ def ilt_document_pages(
     return _fetch_document_pages(
         context=context,
         entries=retsinfo_sitemap_page,
-        document_type="ilt",
+        document_type=DocumentType.ILT,
         retsinformation_http=retsinformation_http,
         config=config,
     )
@@ -153,7 +154,7 @@ def retsinfo_document_pages(
     return _fetch_document_pages(
         context=context,
         entries=retsinfo_sitemap_page,
-        document_type="retsinfo",
+        document_type=DocumentType.RETSINFO,
         retsinformation_http=retsinformation_http,
         config=config,
     )
