@@ -1,12 +1,8 @@
-import json
-import os
-import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
 from urllib.request import Request, urlopen
 
-from dagster import ConfigurableResource
+from dagster import AssetExecutionContext, ConfigurableResource, PipesSubprocessClient
 
 
 class LearningStorageResource(ConfigurableResource):
@@ -20,14 +16,20 @@ class LearningStorageResource(ConfigurableResource):
 
 class DotnetScriptResource(ConfigurableResource):
     command: str = "dotnet"
-    timeout_seconds: float = 600.0
 
     def run_json(
-        self, script_path: Path, payload: object, log: Any | None = None
+        self, context: AssetExecutionContext, script_path: Path, payload: object
     ) -> object:
         with tempfile.TemporaryDirectory(prefix="opensourcelaw-dotnet-") as artifacts_dir:
-            completed = subprocess.run(
-                [
+            invocation = PipesSubprocessClient(
+                cwd=str(script_path.parent),
+                env={
+                    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+                    "DOTNET_NOLOGO": "1",
+                },
+            ).run(
+                context=context,
+                command=[
                     self.command,
                     "run",
                     "--artifacts-path",
@@ -35,27 +37,17 @@ class DotnetScriptResource(ConfigurableResource):
                     "--file",
                     str(script_path),
                 ],
-                input=json.dumps(payload, separators=(",", ":")),
-                capture_output=True,
-                check=False,
-                cwd=script_path.parent,
-                env=os.environ
-                | {
-                    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-                    "DOTNET_NOLOGO": "1",
-                },
-                text=True,
-                timeout=self.timeout_seconds,
+                extras={"payload": payload},
             )
 
-        if completed.returncode:
-            raise RuntimeError(completed.stderr.strip() or completed.stdout.strip())
+        messages = invocation.get_custom_messages()
 
-        if log is not None and completed.stderr.strip():
-            for line in completed.stderr.splitlines():
-                log.info(line)
+        if len(messages) != 1:
+            raise RuntimeError(
+                f"dotnet script reported {len(messages)} custom messages, expected 1"
+            )
 
-        return json.loads(completed.stdout)
+        return messages[0]
 
 
 class RetsinformationHttpResource(ConfigurableResource):

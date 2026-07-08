@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from dagster import AssetExecutionContext, asset
+from dagster import AssetExecutionContext, Output, asset
 
 from src.assets.retsinformation.sitemap_index import SitemapPageRef
 from src.resources import DotnetScriptResource
@@ -138,7 +138,7 @@ def retsinfo_sitemap_pages(
     context: AssetExecutionContext,
     retsinfo_sitemap_index: list[SitemapPageRef],
     dotnet_script: DotnetScriptResource,
-) -> list[SitemapEntry]:
+) -> Output[list[SitemapEntry]]:
     page_refs = sorted(retsinfo_sitemap_index, key=lambda ref: int(ref.page))
     payload = {
         "userAgent": RETSINFO_USER_AGENT,
@@ -156,7 +156,7 @@ def retsinfo_sitemap_pages(
         f"Fetching and parsing {len(page_refs)} sitemap pages with dotnet: "
         f"{RETSINFO_SITEMAP_PAGES_TOOL}"
     )
-    raw_result = dotnet_script.run_json(RETSINFO_SITEMAP_PAGES_TOOL, payload, context.log)
+    raw_result = dotnet_script.run_json(context, RETSINFO_SITEMAP_PAGES_TOOL, payload)
     result = _required_mapping(raw_result, "root")
     entries = _load_entries(result.get("entries"))
     entry_count = _required_int(result, "entryCount")
@@ -168,8 +168,9 @@ def retsinfo_sitemap_pages(
 
     _log_page_results(context, result.get("pages"))
 
-    context.add_output_metadata(
-        {
+    return Output(
+        entries,
+        metadata={
             "sitemap_page_count": _required_int(result, "sitemapPageCount"),
             "entry_count": entry_count,
             "skipped_count": _required_int(result, "skippedCount"),
@@ -179,7 +180,5 @@ def retsinfo_sitemap_pages(
             "year_count": _required_int(result, "yearCount"),
             "fetch_seconds": round(_required_float(result, "fetchSeconds"), 3),
             "parse_seconds": round(_required_float(result, "parseSeconds"), 3),
-        }
+        },
     )
-
-    return entries

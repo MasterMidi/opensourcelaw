@@ -16,9 +16,8 @@ internal static class SitemapPagesTool
     private const string SitemapNamespace = "http://www.sitemaps.org/schemas/sitemap/0.9";
     private static readonly HashSet<string> DocumentTypes = new(StringComparer.Ordinal)
     {
-        "fc",
+        "ft",
         "fob",
-        "ilt",
         "lta",
         "ltb",
         "ltc",
@@ -28,13 +27,11 @@ internal static class SitemapPagesTool
 
     public static async Task<int> RunAsync()
     {
+        using var pipes = DagsterPipes.Open();
+
         try
         {
-            var inputJson = await Console.In.ReadToEndAsync();
-            var input = JsonSerializer.Deserialize(
-                inputJson,
-                SitemapPagesJsonContext.Default.ToolInput
-            );
+            var input = await DagsterPipes.ReadInputAsync(SitemapPagesJsonContext.Default.ToolInput);
 
             if (input?.Pages is null)
             {
@@ -132,7 +129,7 @@ internal static class SitemapPagesTool
             );
 
             ToolLog.Info($"Parsed {entries.Count} sitemap entries ({skippedCount} skipped)");
-            Console.Write(JsonSerializer.Serialize(output, SitemapPagesJsonContext.Default.ToolOutput));
+            DagsterPipes.WriteOutput(output, SitemapPagesJsonContext.Default.ToolOutput);
             return 0;
         }
         catch (Exception error)

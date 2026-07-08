@@ -1,1 +1,2 @@
 - [ ] Explore https://www.retsinformation.dk/offentlig/xml/schemas/ for schemas at retsinformation to use as validation?
+- [ ] Write json metadata to raw xml files

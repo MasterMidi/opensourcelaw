@@ -12,23 +12,18 @@ internal static class RetsinformationDownloaderTool
 {
     public static async Task<int> RunAsync()
     {
+        using var pipes = DagsterPipes.Open();
+
         try
         {
-            var inputJson = await Console.In.ReadToEndAsync();
-            var input = JsonSerializer.Deserialize(
-                inputJson,
+            var input = await DagsterPipes.ReadInputAsync(
                 RetsinformationDownloaderJsonContext.Default.ToolInput
             );
 
             Validate(input);
 
             var output = await RunAsync(input!);
-            Console.Write(
-                JsonSerializer.Serialize(
-                    output,
-                    RetsinformationDownloaderJsonContext.Default.ToolOutput
-                )
-            );
+            DagsterPipes.WriteOutput(output, RetsinformationDownloaderJsonContext.Default.ToolOutput);
 
             return 0;
         }

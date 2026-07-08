@@ -72,6 +72,7 @@ def retsinfo_documents(
     result = cast(
         dict[str, Any],
         dotnet_script.run_json(
+            context,
             RETSINFO_DOWNLOADER_TOOL,
             {
                 "documentType": document_type.value,
@@ -83,7 +84,6 @@ def retsinfo_documents(
                     _entry_payload(entry) for entry in retsinfo_sitemap_pages
                 ],
             },
-            context.log,
         ),
     )
 
