@@ -1,3 +1,5 @@
+#:project ./shared/OpenSourceLaw.Tools.csproj
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8,15 +10,12 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using OpenSourceLaw.Tools;
 
 return await RetsinformationDownloaderTool.RunAsync();
 
 internal static class RetsinformationDownloaderTool
 {
-    private const string DefaultUserAgent = "opensourcelaw-retsinformation-ingest/0.1";
-    private const string XmlEndpointSource = "xml_endpoint";
-    private const string ApiDocumentSource = "api_document";
-
     public static async Task<int> RunAsync()
     {
         try
@@ -41,7 +40,7 @@ internal static class RetsinformationDownloaderTool
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine(error.Message);
+            ToolLog.Error(error.Message);
             return 1;
         }
     }
@@ -56,19 +55,27 @@ internal static class RetsinformationDownloaderTool
         }
 
         var outputDir = Path.GetFullPath(input.OutputDir!);
-        var documentsPath = Path.Combine(outputDir, "documents.jsonl");
+        var xmlDirectoryPath = Path.Combine(outputDir, "xml");
         var failuresPath = Path.Combine(outputDir, "failures.jsonl");
         var manifestPath = Path.Combine(outputDir, "manifest.json");
+        var tempXmlDirectoryPath = xmlDirectoryPath + ".tmp";
+        var tempFailuresPath = failuresPath + ".tmp";
         var documentRefs = input.RetsinfoSitemapPage!
             .Where(entry => entry.Type == input.DocumentType && entry.Year == input.Year)
             .ToList();
-        var sourceCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-        var fetchedCount = 0;
+        var downloadedCount = 0;
         var failedCount = 0;
         var notFoundCount = 0;
         long bytesDownloaded = 0;
 
         Directory.CreateDirectory(outputDir);
+
+        if (Directory.Exists(tempXmlDirectoryPath))
+        {
+            Directory.Delete(tempXmlDirectoryPath, true);
+        }
+
+        Directory.CreateDirectory(tempXmlDirectoryPath);
 
         using var handler = new HttpClientHandler
         {
@@ -79,54 +86,68 @@ internal static class RetsinformationDownloaderTool
             Timeout = TimeSpan.FromSeconds(timeoutSeconds),
         };
         httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
-            string.IsNullOrWhiteSpace(input.UserAgent) ? DefaultUserAgent : input.UserAgent
+            string.IsNullOrWhiteSpace(input.UserAgent)
+                ? ToolDefaults.UserAgent
+                : input.UserAgent
         );
 
-        var tempDocumentsPath = documentsPath + ".tmp";
-        var tempFailuresPath = failuresPath + ".tmp";
+        ToolLog.Info($"Downloading {documentRefs.Count} XML documents to {xmlDirectoryPath}");
 
-        await using (var documents = new StreamWriter(tempDocumentsPath, false, new UTF8Encoding(false)))
         await using (var failures = new StreamWriter(tempFailuresPath, false, new UTF8Encoding(false)))
         {
-            foreach (var entry in documentRefs)
+            for (var index = 0; index < documentRefs.Count; index += 1)
             {
+                var entry = documentRefs[index];
                 ValidateEntry(entry);
 
-                var (page, failure) = await FetchDocumentAsync(httpClient, entry);
+                var xmlUrl = DocumentXmlUrl(entry.Url);
+                using var response = await httpClient.GetAsync(
+                    xmlUrl,
+                    HttpCompletionOption.ResponseContentRead
+                );
+                var bytes = await response.Content.ReadAsByteArrayAsync();
 
-                if (page is not null)
+                if (response.IsSuccessStatusCode)
                 {
-                    await documents.WriteLineAsync(
-                        JsonSerializer.Serialize(
-                            page,
-                            RetsinformationDownloaderJsonContext.Default.DocumentPageOutput
-                        )
+                    await File.WriteAllBytesAsync(
+                        Path.Combine(tempXmlDirectoryPath, DocumentFileName(entry, index + 1)),
+                        bytes
                     );
-                    fetchedCount += 1;
-                    bytesDownloaded += page.BytesDownloaded;
-                    sourceCounts[page.Source] = sourceCounts.GetValueOrDefault(page.Source) + 1;
+                    downloadedCount += 1;
+                    bytesDownloaded += bytes.Length;
                     continue;
                 }
 
-                if (failure is not null)
-                {
-                    await failures.WriteLineAsync(
-                        JsonSerializer.Serialize(
-                            failure,
-                            RetsinformationDownloaderJsonContext.Default.DocumentFetchFailureOutput
-                        )
-                    );
-                    failedCount += 1;
+                failedCount += 1;
 
-                    if (failure.StatusCode == 404)
-                    {
-                        notFoundCount += 1;
-                    }
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    notFoundCount += 1;
                 }
+
+                ToolLog.Warn(
+                    $"XML endpoint {xmlUrl} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}"
+                );
+                await failures.WriteLineAsync(
+                    JsonSerializer.Serialize(
+                        new DocumentFetchFailureOutput(
+                            entry,
+                            xmlUrl,
+                            (int)response.StatusCode,
+                            response.ReasonPhrase ?? "request failed"
+                        ),
+                        RetsinformationDownloaderJsonContext.Default.DocumentFetchFailureOutput
+                    )
+                );
             }
         }
 
-        File.Move(tempDocumentsPath, documentsPath, true);
+        if (Directory.Exists(xmlDirectoryPath))
+        {
+            Directory.Delete(xmlDirectoryPath, true);
+        }
+
+        Directory.Move(tempXmlDirectoryPath, xmlDirectoryPath);
         File.Move(tempFailuresPath, failuresPath, true);
 
         var firstEntry = documentRefs.FirstOrDefault();
@@ -134,127 +155,22 @@ internal static class RetsinformationDownloaderTool
             input.DocumentType!,
             input.Year!,
             outputDir,
-            documentsPath,
+            xmlDirectoryPath,
             failuresPath,
             manifestPath,
             documentRefs.Count,
-            fetchedCount,
+            downloadedCount,
             failedCount,
             notFoundCount,
             bytesDownloaded,
-            sourceCounts,
-            firstEntry is null ? null : DocumentXmlUrl(firstEntry.Url),
-            firstEntry is null ? null : DocumentApiUrl(firstEntry.Url)
+            firstEntry is null ? null : DocumentXmlUrl(firstEntry.Url)
         );
 
         await WriteJsonFileAsync(manifestPath, output);
+        ToolLog.Info(
+            $"Downloaded {downloadedCount}/{documentRefs.Count} XML documents ({failedCount} failed)"
+        );
         return output;
-    }
-
-    private static async Task<(DocumentPageOutput? Page, DocumentFetchFailureOutput? Failure)> FetchDocumentAsync(
-        HttpClient httpClient,
-        SitemapEntry entry
-    )
-    {
-        var xmlUrl = DocumentXmlUrl(entry.Url);
-        using var xmlResponse = await httpClient.GetAsync(
-            xmlUrl,
-            HttpCompletionOption.ResponseContentRead
-        );
-        var xmlBytes = await xmlResponse.Content.ReadAsByteArrayAsync();
-
-        if (xmlResponse.StatusCode == HttpStatusCode.NotFound)
-        {
-            return await FetchApiDocumentAsync(httpClient, entry);
-        }
-
-        if (!xmlResponse.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException(
-                $"XML endpoint {xmlUrl} returned HTTP {(int)xmlResponse.StatusCode} "
-                + xmlResponse.ReasonPhrase
-            );
-        }
-
-        return (
-            new DocumentPageOutput(
-                entry,
-                xmlUrl,
-                XmlEndpointSource,
-                (int)xmlResponse.StatusCode,
-                ContentType(xmlResponse),
-                DecodeBody(xmlBytes, xmlResponse),
-                xmlBytes.Length
-            ),
-            null
-        );
-    }
-
-    private static async Task<(DocumentPageOutput? Page, DocumentFetchFailureOutput? Failure)> FetchApiDocumentAsync(
-        HttpClient httpClient,
-        SitemapEntry entry
-    )
-    {
-        var apiUrl = DocumentApiUrl(entry.Url);
-        using var request = new HttpRequestMessage(HttpMethod.Post, apiUrl)
-        {
-            Content = new StringContent("{\"isRawHtml\":false}", Encoding.UTF8, "application/json"),
-        };
-        using var response = await httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseContentRead
-        );
-        var bytes = await response.Content.ReadAsByteArrayAsync();
-        var body = DecodeBody(bytes, response);
-
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return (
-                null,
-                new DocumentFetchFailureOutput(
-                    entry,
-                    apiUrl,
-                    ApiDocumentSource,
-                    (int)response.StatusCode,
-                    response.ReasonPhrase ?? "not found"
-                )
-            );
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException(
-                $"API fallback {apiUrl} returned HTTP {(int)response.StatusCode} "
-                + response.ReasonPhrase
-            );
-        }
-
-        if (!ApiDocumentResponseHasDocument(body))
-        {
-            return (
-                null,
-                new DocumentFetchFailureOutput(
-                    entry,
-                    apiUrl,
-                    ApiDocumentSource,
-                    (int)response.StatusCode,
-                    "API fallback returned no document"
-                )
-            );
-        }
-
-        return (
-            new DocumentPageOutput(
-                entry,
-                apiUrl,
-                ApiDocumentSource,
-                (int)response.StatusCode,
-                ContentType(response),
-                body,
-                bytes.Length
-            ),
-            null
-        );
     }
 
     private static string DocumentXmlUrl(string url)
@@ -263,73 +179,12 @@ internal static class RetsinformationDownloaderTool
         return baseUrl.EndsWith("/xml", StringComparison.Ordinal) ? baseUrl : baseUrl + "/xml";
     }
 
-    private static string DocumentApiUrl(string url)
+    private static string DocumentFileName(SitemapEntry entry, int index)
     {
-        var builder = new UriBuilder(url.TrimEnd('/'));
-        var path = builder.Path;
-
-        if (path.EndsWith("/xml", StringComparison.Ordinal))
-        {
-            path = path[..^"/xml".Length];
-        }
-
-        builder.Path = "/api/document" + path;
-        builder.Query = string.Empty;
-        builder.Fragment = string.Empty;
-
-        return builder.Uri.ToString();
-    }
-
-    private static bool ApiDocumentResponseHasDocument(string body)
-    {
-        try
-        {
-            using var documents = JsonDocument.Parse(body);
-
-            if (
-                documents.RootElement.ValueKind != JsonValueKind.Array
-                || documents.RootElement.GetArrayLength() == 0
-            )
-            {
-                return false;
-            }
-
-            var firstDocument = documents.RootElement[0];
-
-            if (firstDocument.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
-
-            return !firstDocument.TryGetProperty("id", out var id)
-                || id.ValueKind != JsonValueKind.Number
-                || !id.TryGetInt32(out var idValue)
-                || idValue != -1;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static string ContentType(HttpResponseMessage response)
-    {
-        return response.Content.Headers.ContentType?.ToString() ?? string.Empty;
-    }
-
-    private static string DecodeBody(byte[] body, HttpResponseMessage response)
-    {
-        var charset = response.Content.Headers.ContentType?.CharSet;
-
-        try
-        {
-            return Encoding.GetEncoding(string.IsNullOrWhiteSpace(charset) ? "utf-8" : charset)
-                .GetString(body);
-        }
-        catch (ArgumentException)
-        {
-            return Encoding.UTF8.GetString(body);
-        }
+        var id = string.IsNullOrWhiteSpace(entry.Id)
+            ? "document"
+            : string.Concat(entry.Id.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_'));
+        return $"{index:000000}_{id}.xml";
     }
 
     private static async Task WriteJsonFileAsync(string path, ToolOutput output)
@@ -392,28 +247,9 @@ internal sealed record ToolInput(
     [property: JsonPropertyName("retsinfoSitemapPage")] List<SitemapEntry>? RetsinfoSitemapPage
 );
 
-internal sealed record SitemapEntry(
-    [property: JsonPropertyName("url")] string Url,
-    [property: JsonPropertyName("lastmod")] string Lastmod,
-    [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("year")] string Year,
-    [property: JsonPropertyName("type")] string Type
-);
-
-internal sealed record DocumentPageOutput(
-    [property: JsonPropertyName("entry")] SitemapEntry Entry,
-    [property: JsonPropertyName("sourceUrl")] string SourceUrl,
-    [property: JsonPropertyName("source")] string Source,
-    [property: JsonPropertyName("statusCode")] int StatusCode,
-    [property: JsonPropertyName("contentType")] string ContentType,
-    [property: JsonPropertyName("body")] string Body,
-    [property: JsonPropertyName("bytesDownloaded")] long BytesDownloaded
-);
-
 internal sealed record DocumentFetchFailureOutput(
     [property: JsonPropertyName("entry")] SitemapEntry Entry,
     [property: JsonPropertyName("sourceUrl")] string SourceUrl,
-    [property: JsonPropertyName("source")] string Source,
     [property: JsonPropertyName("statusCode")] int StatusCode,
     [property: JsonPropertyName("reason")] string Reason
 );
@@ -422,22 +258,19 @@ internal sealed record ToolOutput(
     [property: JsonPropertyName("documentType")] string DocumentType,
     [property: JsonPropertyName("year")] string Year,
     [property: JsonPropertyName("outputDir")] string OutputDir,
-    [property: JsonPropertyName("documentsPath")] string DocumentsPath,
+    [property: JsonPropertyName("xmlDirectoryPath")] string XmlDirectoryPath,
     [property: JsonPropertyName("failuresPath")] string FailuresPath,
     [property: JsonPropertyName("manifestPath")] string ManifestPath,
     [property: JsonPropertyName("availableRefCount")] int AvailableRefCount,
-    [property: JsonPropertyName("fetchedCount")] int FetchedCount,
+    [property: JsonPropertyName("downloadedCount")] int DownloadedCount,
     [property: JsonPropertyName("failedCount")] int FailedCount,
     [property: JsonPropertyName("notFoundCount")] int NotFoundCount,
     [property: JsonPropertyName("bytesDownloaded")] long BytesDownloaded,
-    [property: JsonPropertyName("sourceCounts")] Dictionary<string, int> SourceCounts,
-    [property: JsonPropertyName("firstXmlUrl")] string? FirstXmlUrl,
-    [property: JsonPropertyName("firstApiUrl")] string? FirstApiUrl
+    [property: JsonPropertyName("firstXmlUrl")] string? FirstXmlUrl
 );
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
 [JsonSerializable(typeof(ToolInput))]
 [JsonSerializable(typeof(ToolOutput))]
-[JsonSerializable(typeof(DocumentPageOutput))]
 [JsonSerializable(typeof(DocumentFetchFailureOutput))]
 internal partial class RetsinformationDownloaderJsonContext : JsonSerializerContext;

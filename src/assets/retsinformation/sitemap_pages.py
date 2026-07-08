@@ -156,7 +156,7 @@ def retsinfo_sitemap_pages(
         f"Fetching and parsing {len(page_refs)} sitemap pages with dotnet: "
         f"{RETSINFO_SITEMAP_PAGES_TOOL}"
     )
-    raw_result = dotnet_script.run_json(RETSINFO_SITEMAP_PAGES_TOOL, payload)
+    raw_result = dotnet_script.run_json(RETSINFO_SITEMAP_PAGES_TOOL, payload, context.log)
     result = _required_mapping(raw_result, "root")
     entries = _load_entries(result.get("entries"))
     entry_count = _required_int(result, "entryCount")

@@ -1,3 +1,5 @@
+#:project ./shared/OpenSourceLaw.Tools.csproj
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -11,12 +13,12 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Linq;
+using OpenSourceLaw.Tools;
 
 return await SitemapPagesTool.RunAsync();
 
 internal static class SitemapPagesTool
 {
-    private const string DefaultUserAgent = "opensourcelaw-retsinformation-ingest/0.1";
     private const string SitemapNamespace = "http://www.sitemaps.org/schemas/sitemap/0.9";
     private static readonly HashSet<string> DocumentTypes = new(StringComparer.Ordinal)
     {
@@ -62,11 +64,13 @@ internal static class SitemapPagesTool
             };
             httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
                 string.IsNullOrWhiteSpace(input.UserAgent)
-                    ? DefaultUserAgent
+                    ? ToolDefaults.UserAgent
                     : input.UserAgent
             );
 
-            var entries = new List<SitemapEntryOutput>();
+            ToolLog.Info($"Fetching {input.Pages.Count} sitemap pages");
+
+            var entries = new List<SitemapEntry>();
             var pages = new List<PageOutput>();
             var skippedCount = 0;
             var totalFetchSeconds = 0.0;
@@ -76,6 +80,7 @@ internal static class SitemapPagesTool
             {
                 ValidatePage(page);
 
+                ToolLog.Info($"Fetching sitemap page {page.Page}: {page.Url}");
                 var fetchTimer = Stopwatch.StartNew();
                 using var response = await httpClient.GetAsync(
                     page.Url,
@@ -132,12 +137,13 @@ internal static class SitemapPagesTool
                 entries
             );
 
+            ToolLog.Info($"Parsed {entries.Count} sitemap entries ({skippedCount} skipped)");
             Console.Write(JsonSerializer.Serialize(output, SitemapPagesJsonContext.Default.ToolOutput));
             return 0;
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine(error.Message);
+            ToolLog.Error(error.Message);
             return 1;
         }
     }
@@ -167,7 +173,7 @@ internal static class SitemapPagesTool
 
     private static ParsedSitemapPage ParseSitemapPage(byte[] xmlContent)
     {
-        var entries = new List<SitemapEntryOutput>();
+        var entries = new List<SitemapEntry>();
         var skippedCount = 0;
         var settings = new XmlReaderSettings
         {
@@ -207,7 +213,7 @@ internal static class SitemapPagesTool
             }
 
             entries.Add(
-                new SitemapEntryOutput(
+                new SitemapEntry(
                     url,
                     lastmodText.Trim(),
                     urlParts.Id,
@@ -298,19 +304,11 @@ internal sealed record PageInput(
 );
 
 internal sealed record ParsedSitemapPage(
-    List<SitemapEntryOutput> Entries,
+    List<SitemapEntry> Entries,
     int SkippedCount
 );
 
 internal sealed record EliDocumentUrlParts(string Id, string Year, string Type);
-
-internal sealed record SitemapEntryOutput(
-    [property: JsonPropertyName("url")] string Url,
-    [property: JsonPropertyName("lastmod")] string Lastmod,
-    [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("year")] string Year,
-    [property: JsonPropertyName("type")] string Type
-);
 
 internal sealed record PageOutput(
     [property: JsonPropertyName("page")] string Page,
@@ -331,7 +329,7 @@ internal sealed record ToolOutput(
     [property: JsonPropertyName("fetchSeconds")] double FetchSeconds,
     [property: JsonPropertyName("parseSeconds")] double ParseSeconds,
     [property: JsonPropertyName("pages")] List<PageOutput> Pages,
-    [property: JsonPropertyName("entries")] List<SitemapEntryOutput> Entries
+    [property: JsonPropertyName("entries")] List<SitemapEntry> Entries
 );
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]

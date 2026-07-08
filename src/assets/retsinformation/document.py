@@ -64,6 +64,11 @@ def retsinfo_documents(
         ingest_root / "raw" / "retsinformation_documents" / document_type / year
     )
 
+    context.log.info(
+        f"Downloading {document_type.value}/{year} XML documents with dotnet: "
+        f"{RETSINFO_DOWNLOADER_TOOL}"
+    )
+
     result = cast(
         dict[str, Any],
         dotnet_script.run_json(
@@ -78,6 +83,7 @@ def retsinfo_documents(
                     _entry_payload(entry) for entry in retsinfo_sitemap_pages
                 ],
             },
+            context.log,
         ),
     )
 

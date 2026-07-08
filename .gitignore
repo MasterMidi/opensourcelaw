@@ -9,3 +9,5 @@ result-*
 .dagster_home/
 .tmp_dagster_home_*/
 data/ingest/
+bin/
+obj/
