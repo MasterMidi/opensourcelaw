@@ -16,7 +16,7 @@ class SitemapPageRef:
     url: str
 
 
-@asset(group_name="retsinformation")
+@asset(group_name="retsinformation", pool="retsinformation_curl")
 def retsinfo_sitemap_index(
     context: AssetExecutionContext,
     retsinformation_curl: RetsinformationCurlResource,

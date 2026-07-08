@@ -4,7 +4,6 @@ import tempfile
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from threading import BoundedSemaphore, Lock
 
 import httpx
 from dagster import ConfigurableResource
@@ -17,10 +16,6 @@ class LearningStorageResource(ConfigurableResource):
         output_path = Path(self.base_dir) / filename
         output_path.parent.mkdir(parents=True, exist_ok=True)
         return output_path
-
-
-_CURL_SEMAPHORES: dict[int, BoundedSemaphore] = {}
-_CURL_SEMAPHORES_LOCK = Lock()
 
 
 @dataclass(frozen=True)
@@ -52,17 +47,6 @@ class CurlResponse:
                 f"curl GET {self.url} returned HTTP {self.status_code} "
                 f"{self.reason_phrase}"
             )
-
-
-def _curl_semaphore(max_concurrent_requests: int) -> BoundedSemaphore:
-    with _CURL_SEMAPHORES_LOCK:
-        semaphore = _CURL_SEMAPHORES.get(max_concurrent_requests)
-
-        if semaphore is None:
-            semaphore = BoundedSemaphore(max_concurrent_requests)
-            _CURL_SEMAPHORES[max_concurrent_requests] = semaphore
-
-        return semaphore
 
 
 def _encoding_from_content_type(content_type: str) -> str:
@@ -114,14 +98,10 @@ def _parse_curl_headers(raw_headers: bytes) -> dict[str, str]:
 class RetsinformationCurlResource(ConfigurableResource):
     timeout_seconds: float = 30.0
     user_agent: str = "opensourcelaw-retsinformation-ingest/0.1"
-    max_concurrent_requests: int = 4
 
     def get(self, url: str, *, follow_redirects: bool = True) -> CurlResponse:
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be greater than zero")
-
-        if self.max_concurrent_requests < 1:
-            raise ValueError("max_concurrent_requests must be at least 1")
 
         curl_path = shutil.which("curl")
 
@@ -154,17 +134,14 @@ class RetsinformationCurlResource(ConfigurableResource):
 
             command.append(url)
 
-            semaphore = _curl_semaphore(self.max_concurrent_requests)
-
             try:
-                with semaphore:
-                    completed = subprocess.run(
-                        command,
-                        capture_output=True,
-                        check=False,
-                        text=True,
-                        timeout=self.timeout_seconds + 5,
-                    )
+                completed = subprocess.run(
+                    command,
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=self.timeout_seconds + 5,
+                )
             except subprocess.TimeoutExpired as error:
                 raise RuntimeError(f"curl timed out fetching {url}") from error
 
