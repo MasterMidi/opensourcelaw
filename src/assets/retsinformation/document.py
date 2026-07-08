@@ -50,7 +50,7 @@ def _entry_payload(entry: SitemapEntry) -> dict[str, str]:
 )
 def retsinfo_documents(
     context: AssetExecutionContext,
-    retsinfo_sitemap_page: list[SitemapEntry],
+    retsinfo_sitemap_pages: list[SitemapEntry],
     dotnet_script: DotnetScriptResource,
 ) -> MaterializeResult:
     keys = cast(Any, context.partition_key).keys_by_dimension
@@ -75,7 +75,7 @@ def retsinfo_documents(
                 "userAgent": RETSINFO_USER_AGENT,
                 "timeoutSeconds": RETSINFO_PAGE_REQUEST_TIMEOUT_SECONDS,
                 "retsinfoSitemapPage": [
-                    _entry_payload(entry) for entry in retsinfo_sitemap_page
+                    _entry_payload(entry) for entry in retsinfo_sitemap_pages
                 ],
             },
         ),

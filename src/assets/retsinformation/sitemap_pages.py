@@ -134,7 +134,7 @@ def _log_page_results(
 
 
 @asset(group_name="retsinformation", pool="retsinformation_dotnet")
-def retsinfo_sitemap_page(
+def retsinfo_sitemap_pages(
     context: AssetExecutionContext,
     retsinfo_sitemap_index: list[SitemapPageRef],
     dotnet_script: DotnetScriptResource,
