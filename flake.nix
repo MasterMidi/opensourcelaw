@@ -84,6 +84,8 @@
           pkgs = nixpkgs.legacyPackages.${system};
           pythonSet = pythonSets.${system}.overrideScope editableOverlay;
           virtualenv = pythonSet.mkVirtualEnv "opensourcelaw-dev-env" workspace.deps.all;
+          dotnetSdk = pkgs.dotnet-sdk_10;
+          dotnetRoot = "${dotnetSdk.unwrapped}/share/dotnet";
         in
         {
           default = pkgs.mkShell {
@@ -91,12 +93,18 @@
               virtualenv
               pkgs.csharp-ls
               pkgs.curl
-              pkgs.dotnet-sdk_10
+              dotnetSdk
               pkgs.pyright
               pkgs.uv
             ];
 
             env = {
+              DOTNET_CLI_TELEMETRY_OPTOUT = "1";
+              DOTNET_HOST_PATH = "${dotnetSdk}/bin/dotnet";
+              DOTNET_NOLOGO = "1";
+              DOTNET_ROOT = dotnetRoot;
+              DOTNET_ROOT_X64 = dotnetRoot;
+              DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1";
               UV_NO_SYNC = "1";
               UV_PYTHON = pythonSet.python.interpreter;
               UV_PYTHON_DOWNLOADS = "never";
