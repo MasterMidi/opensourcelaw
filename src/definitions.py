@@ -30,7 +30,11 @@ from src.assets.retsinformation.documents import (
 )
 from src.assets.retsinformation.pages import retsinfo_sitemap_page
 from src.assets.retsinformation.sitemap import retsinfo_sitemap_index
-from src.resources import LearningStorageResource, RetsinformationHttpResource
+from src.resources import (
+    LearningStorageResource,
+    RetsinformationCurlResource,
+    RetsinformationHttpResource,
+)
 
 learning_file_pipeline_job = define_asset_job(
     name="learning_file_pipeline", selection="*parsed_titles_from_files"
@@ -73,6 +77,7 @@ defs = Definitions(
     schedules=[learning_file_pipeline_schedule],
     resources={
         "learning_storage": LearningStorageResource(),
+        "retsinformation_curl": RetsinformationCurlResource(),
         "retsinformation_http": RetsinformationHttpResource(),
     },
 )
