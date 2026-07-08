@@ -31,6 +31,7 @@ from src.assets.retsinformation.documents import (
 from src.assets.retsinformation.pages import retsinfo_sitemap_page
 from src.assets.retsinformation.sitemap import retsinfo_sitemap_index
 from src.resources import (
+    DotnetScriptResource,
     LearningStorageResource,
     RetsinformationCurlResource,
     RetsinformationHttpResource,
@@ -76,6 +77,7 @@ defs = Definitions(
     jobs=[learning_file_pipeline_job],
     schedules=[learning_file_pipeline_schedule],
     resources={
+        "dotnet_script": DotnetScriptResource(),
         "learning_storage": LearningStorageResource(),
         "retsinformation_curl": RetsinformationCurlResource(),
         "retsinformation_http": RetsinformationHttpResource(),

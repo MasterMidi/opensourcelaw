@@ -1,19 +1,18 @@
-from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from io import BytesIO
-from time import perf_counter
+from pathlib import Path
 
 from dagster import AssetExecutionContext, asset
-from defusedxml import ElementTree
 
 from src.assets.retsinformation.sitemap import SitemapPageRef
-from src.resources import RetsinformationHttpResource
+from src.resources import DotnetScriptResource
 
-SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
-SITEMAP_URL_TAG = "{http://www.sitemaps.org/schemas/sitemap/0.9}url"
-SITEMAP_LOC_TAG = "{http://www.sitemaps.org/schemas/sitemap/0.9}loc"
-SITEMAP_LASTMOD_TAG = "{http://www.sitemaps.org/schemas/sitemap/0.9}lastmod"
+RETSINFO_SITEMAP_PAGES_TOOL = (
+    Path(__file__).resolve().parents[3] / "tools" / "retsinformation_sitemap_pages.cs"
+)
+RETSINFO_USER_AGENT = "opensourcelaw-retsinformation-ingest/0.1"
+RETSINFO_PAGE_REQUEST_TIMEOUT_SECONDS = 30.0
 
 
 class DocumentType(StrEnum):
@@ -27,16 +26,6 @@ class DocumentType(StrEnum):
     RETSINFO = "retsinfo"
 
 
-DOCUMENT_TYPES_WITH_ID_PREFIX_YEAR = {DocumentType.FC}
-
-
-@dataclass(frozen=True)
-class EliDocumentUrlParts:
-    id: str
-    year: str
-    type: DocumentType
-
-
 @dataclass(frozen=True)
 class SitemapEntry:
     url: str
@@ -46,129 +35,141 @@ class SitemapEntry:
     type: DocumentType
 
 
-@dataclass(frozen=True)
-class ParsedSitemapPage:
-    entries: list[SitemapEntry]
-    skipped_count: int
+def _required_mapping(value: object, field: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"dotnet sitemap page output field {field!r} must be an object")
+
+    return value
 
 
-def parse_eli_document_url(url: str) -> EliDocumentUrlParts | None:
-    _prefix, separator, path = url.partition("/eli/")
+def _required_str(value: Mapping[str, object], field: str) -> str:
+    field_value = value.get(field)
 
-    if not separator:
-        return None
+    if not isinstance(field_value, str):
+        raise ValueError(f"dotnet sitemap page output field {field!r} must be a string")
 
-    path = path.split("?", 1)[0].split("#", 1)[0].strip("/")
-    parts = path.split("/")
-
-    if len(parts) not in {2, 3}:
-        return None
-
-    try:
-        doc_type = DocumentType(parts[0])
-    except ValueError:
-        return None
-
-    if len(parts) == 2:
-        document_id = parts[1]
-
-        if doc_type not in DOCUMENT_TYPES_WITH_ID_PREFIX_YEAR:
-            return None
-
-        year = document_id[:4]
-    else:
-        year, document_id = parts[1:]
-
-    if len(year) != 4 or not year.isdigit():
-        return None
-
-    return EliDocumentUrlParts(id=document_id, year=year, type=doc_type)
+    return field_value
 
 
-def parse_eli_sitemap_page(xml_content: bytes) -> ParsedSitemapPage:
+def _required_int(value: Mapping[str, object], field: str) -> int:
+    field_value = value.get(field)
+
+    if isinstance(field_value, bool) or not isinstance(field_value, int):
+        raise ValueError(f"dotnet sitemap page output field {field!r} must be an int")
+
+    return field_value
+
+
+def _required_float(value: Mapping[str, object], field: str) -> float:
+    field_value = value.get(field)
+
+    if isinstance(field_value, bool) or not isinstance(field_value, (int, float)):
+        raise ValueError(f"dotnet sitemap page output field {field!r} must be numeric")
+
+    return float(field_value)
+
+
+def _required_str_int_dict(value: object, field: str) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"dotnet sitemap page output field {field!r} must be an object")
+
+    counts: dict[str, int] = {}
+
+    for key, count in value.items():
+        if not isinstance(key, str) or isinstance(count, bool) or not isinstance(count, int):
+            raise ValueError(
+                f"dotnet sitemap page output field {field!r} must map strings to ints"
+            )
+
+        counts[key] = count
+
+    return counts
+
+
+def _load_entries(value: object) -> list[SitemapEntry]:
+    if not isinstance(value, list):
+        raise ValueError("dotnet sitemap page output field 'entries' must be a list")
+
     entries: list[SitemapEntry] = []
-    skipped_count = 0
 
-    for _event, element in ElementTree.iterparse(BytesIO(xml_content), events=("end",)):
-        if element.tag != SITEMAP_URL_TAG:
-            continue
-
-        loc_text = element.findtext(SITEMAP_LOC_TAG)
-        lastmod_text = element.findtext(SITEMAP_LASTMOD_TAG)
-
-        if loc_text is None or lastmod_text is None:
-            skipped_count += 1
-            element.clear()
-            continue
-
-        url = loc_text.strip()
-        url_parts = parse_eli_document_url(url)
-
-        if url_parts is None:
-            skipped_count += 1
-            element.clear()
-            continue
-
+    for item in value:
+        entry = _required_mapping(item, "entries[]")
         entries.append(
             SitemapEntry(
-                url=url,
-                lastmod=lastmod_text.strip(),
-                id=url_parts.id,
-                year=url_parts.year,
-                type=url_parts.type,
+                url=_required_str(entry, "url"),
+                lastmod=_required_str(entry, "lastmod"),
+                id=_required_str(entry, "id"),
+                year=_required_str(entry, "year"),
+                type=DocumentType(_required_str(entry, "type")),
             )
         )
-        element.clear()
 
-    return ParsedSitemapPage(entries=entries, skipped_count=skipped_count)
+    return entries
 
 
-@asset(group_name="retsinformation")
+def _log_page_results(
+    context: AssetExecutionContext,
+    page_results: object,
+) -> None:
+    if not isinstance(page_results, list):
+        raise ValueError("dotnet sitemap page output field 'pages' must be a list")
+
+    for item in page_results:
+        page = _required_mapping(item, "pages[]")
+        context.log.info(
+            f"Loaded {_required_int(page, 'entryCount')} entries from sitemap page "
+            f"{_required_str(page, 'page')} in "
+            f"{_required_float(page, 'parseSeconds'):.2f}s after "
+            f"{_required_float(page, 'fetchSeconds'):.2f}s fetch "
+            f"({_required_int(page, 'totalEntryCount')} total, "
+            f"{_required_int(page, 'skippedCount')} skipped on page)"
+        )
+
+
+@asset(group_name="retsinformation", pool="retsinformation_dotnet")
 def retsinfo_sitemap_page(
     context: AssetExecutionContext,
     retsinfo_sitemap_index: list[SitemapPageRef],
-    retsinformation_http: RetsinformationHttpResource,
+    dotnet_script: DotnetScriptResource,
 ) -> list[SitemapEntry]:
-    entries = []
-    skipped_count = 0
-    total_fetch_seconds = 0.0
-    total_parse_seconds = 0.0
+    page_refs = sorted(retsinfo_sitemap_index, key=lambda ref: int(ref.page))
+    payload = {
+        "userAgent": RETSINFO_USER_AGENT,
+        "timeoutSeconds": RETSINFO_PAGE_REQUEST_TIMEOUT_SECONDS,
+        "pages": [
+            {
+                "page": page_ref.page,
+                "url": page_ref.url,
+            }
+            for page_ref in page_refs
+        ],
+    }
 
-    for page_ref in sorted(retsinfo_sitemap_index, key=lambda ref: int(ref.page)):
-        context.log.info(f"Fetching sitemap page {page_ref.page}: {page_ref.url}")
-        fetch_start = perf_counter()
-        response = retsinformation_http.get(page_ref.url, follow_redirects=True)
+    context.log.info(
+        f"Fetching and parsing {len(page_refs)} sitemap pages with dotnet: "
+        f"{RETSINFO_SITEMAP_PAGES_TOOL}"
+    )
+    raw_result = dotnet_script.run_json(RETSINFO_SITEMAP_PAGES_TOOL, payload)
+    result = _required_mapping(raw_result, "root")
+    entries = _load_entries(result.get("entries"))
+    entry_count = _required_int(result, "entryCount")
 
-        response.raise_for_status()
-        fetch_seconds = perf_counter() - fetch_start
-        total_fetch_seconds += fetch_seconds
-
-        parse_start = perf_counter()
-        parsed_page = parse_eli_sitemap_page(response.content)
-        parse_seconds = perf_counter() - parse_start
-        total_parse_seconds += parse_seconds
-
-        entries.extend(parsed_page.entries)
-        skipped_count += parsed_page.skipped_count
-
-        context.log.info(
-            f"Loaded {len(parsed_page.entries)} entries from sitemap page {page_ref.page} "
-            f"in {parse_seconds:.2f}s after {fetch_seconds:.2f}s fetch "
-            f"({len(entries)} total, {parsed_page.skipped_count} skipped on page)"
+    if entry_count != len(entries):
+        raise ValueError(
+            "dotnet sitemap page output entryCount does not match entries length"
         )
 
-    type_counts = Counter(entry.type.value for entry in entries)
-    year_counts = Counter(entry.year for entry in entries)
+    _log_page_results(context, result.get("pages"))
 
     context.add_output_metadata(
         {
-            "sitemap_page_count": len(retsinfo_sitemap_index),
-            "entry_count": len(entries),
-            "skipped_count": skipped_count,
-            "type_counts": dict(sorted(type_counts.items())),
-            "year_count": len(year_counts),
-            "fetch_seconds": round(total_fetch_seconds, 3),
-            "parse_seconds": round(total_parse_seconds, 3),
+            "sitemap_page_count": _required_int(result, "sitemapPageCount"),
+            "entry_count": entry_count,
+            "skipped_count": _required_int(result, "skippedCount"),
+            "type_counts": _required_str_int_dict(result.get("typeCounts"), "typeCounts"),
+            "year_count": _required_int(result, "yearCount"),
+            "fetch_seconds": round(_required_float(result, "fetchSeconds"), 3),
+            "parse_seconds": round(_required_float(result, "parseSeconds"), 3),
         }
     )
 

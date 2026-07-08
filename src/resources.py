@@ -1,3 +1,5 @@
+import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +18,58 @@ class LearningStorageResource(ConfigurableResource):
         output_path = Path(self.base_dir) / filename
         output_path.parent.mkdir(parents=True, exist_ok=True)
         return output_path
+
+
+class DotnetScriptResource(ConfigurableResource):
+    command: str = "dotnet"
+    timeout_seconds: float = 600.0
+
+    def run_json(self, script_path: Path, payload: object) -> object:
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than zero")
+
+        dotnet_path = shutil.which(self.command)
+
+        if dotnet_path is None:
+            raise RuntimeError(f"{self.command} is required for DotnetScriptResource")
+
+        if not script_path.exists():
+            raise RuntimeError(f"dotnet script does not exist: {script_path}")
+
+        env = os.environ | {
+            "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+            "DOTNET_NOLOGO": "1",
+            "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
+        }
+
+        try:
+            completed = subprocess.run(
+                [dotnet_path, "run", str(script_path)],
+                input=json.dumps(payload, separators=(",", ":")),
+                capture_output=True,
+                check=False,
+                cwd=script_path.parent,
+                env=env,
+                text=True,
+                timeout=self.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(f"dotnet script timed out: {script_path}") from error
+
+        if completed.returncode != 0:
+            error_message = completed.stderr.strip() or completed.stdout.strip()
+            raise RuntimeError(
+                f"dotnet script failed ({script_path}): "
+                f"{error_message or f'exit {completed.returncode}'}"
+            )
+
+        try:
+            return json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(
+                f"dotnet script returned invalid JSON ({script_path}): "
+                f"{completed.stdout[:500]!r}"
+            ) from error
 
 
 @dataclass(frozen=True)
