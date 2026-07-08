@@ -89,6 +89,10 @@
           default = pkgs.mkShell {
             packages = [
               virtualenv
+              pkgs.csharp-ls
+              pkgs.curl
+              pkgs.dotnet-sdk_10
+              pkgs.pyright
               pkgs.uv
             ];
 
