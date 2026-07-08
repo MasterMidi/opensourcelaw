@@ -91,7 +91,8 @@
           default = pkgs.mkShell {
             packages = [
               virtualenv
-              pkgs.csharp-ls
+              pkgs.roslyn
+              pkgs.roslyn-ls
               pkgs.curl
               dotnetSdk
               pkgs.pyright
