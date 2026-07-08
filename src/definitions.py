@@ -1,6 +1,6 @@
 from dagster import (
     Definitions,
-    PipesSubprocessClient,
+    PoolMetadataValue,
     ScheduleDefinition,
     define_asset_job,
 )
@@ -25,24 +25,12 @@ from learning import (
     yearly_fake_source_urls,
     yearly_parsed_titles_from_files,
 )
-from src.assets.retsinformation.documents import (
-    fc_document_pages,
-    fc_document_refs,
-    ilt_document_pages,
-    ilt_document_refs,
-    retsinfo_document_pages,
-    retsinfo_document_refs,
-)
-from src.assets.retsinformation.downloader import (
-    retsinfo_downloader,
-    retsinfo_downloader_test,
-)
-from src.assets.retsinformation.pages import retsinfo_sitemap_page
-from src.assets.retsinformation.sitemap import retsinfo_sitemap_index
+from src.assets.retsinformation.document import retsinfo_documents
+from src.assets.retsinformation.sitemap_pages import retsinfo_sitemap_page
+from src.assets.retsinformation.sitemap_index import retsinfo_sitemap_index
 from src.resources import (
     DotnetScriptResource,
     LearningStorageResource,
-    RetsinformationCurlResource,
     RetsinformationHttpResource,
 )
 
@@ -75,14 +63,7 @@ defs = Definitions(
         yearly_parsed_titles_from_files,
         retsinfo_sitemap_index,
         retsinfo_sitemap_page,
-        fc_document_refs,
-        fc_document_pages,
-        ilt_document_refs,
-        ilt_document_pages,
-        retsinfo_document_refs,
-        retsinfo_document_pages,
-        retsinfo_downloader,
-        retsinfo_downloader_test,
+        retsinfo_documents,
     ],
     asset_checks=[parsed_titles_are_not_empty],
     jobs=[learning_file_pipeline_job],
@@ -90,8 +71,6 @@ defs = Definitions(
     resources={
         "dotnet_script": DotnetScriptResource(),
         "learning_storage": LearningStorageResource(),
-        "retsinformation_curl": RetsinformationCurlResource(),
         "retsinformation_http": RetsinformationHttpResource(),
-        "pipes_subprocess_client": PipesSubprocessClient(),
     },
 )

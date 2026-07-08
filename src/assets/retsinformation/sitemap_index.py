@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 from dagster import AssetExecutionContext, asset
 from defusedxml import ElementTree
 
-from src.resources import RetsinformationCurlResource
+from src.resources import RetsinformationHttpResource
 
 RETSINFO_ELI_SITEMAP_URL = "https://www.retsinformation.dk/eli/sitemap.xml"
 SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
@@ -16,16 +16,14 @@ class SitemapPageRef:
     url: str
 
 
-@asset(group_name="retsinformation", pool="retsinformation_curl")
+@asset(group_name="retsinformation", pool="retsinformation_http")
 def retsinfo_sitemap_index(
     context: AssetExecutionContext,
-    retsinformation_curl: RetsinformationCurlResource,
+    retsinformation_http: RetsinformationHttpResource,
 ) -> list[SitemapPageRef]:
-    response = retsinformation_curl.get(RETSINFO_ELI_SITEMAP_URL)
-
-    response.raise_for_status()
-
-    root = ElementTree.fromstring(response.content)
+    root = ElementTree.fromstring(
+        retsinformation_http.get_bytes(RETSINFO_ELI_SITEMAP_URL)
+    )
 
     refs = []
 

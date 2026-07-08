@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dagster import AssetExecutionContext, asset
 
-from src.assets.retsinformation.sitemap import SitemapPageRef
+from src.assets.retsinformation.sitemap_index import SitemapPageRef
 from src.resources import DotnetScriptResource
 
 RETSINFO_SITEMAP_PAGES_TOOL = (
@@ -15,15 +15,14 @@ RETSINFO_USER_AGENT = "opensourcelaw-retsinformation-ingest/0.1"
 RETSINFO_PAGE_REQUEST_TIMEOUT_SECONDS = 30.0
 
 
-class DocumentType(StrEnum):
-    FC = "fc"
-    FOB = "fob"
-    ILT = "ilt"
-    LTA = "lta"
-    LTB = "ltb"
-    LTC = "ltc"
-    MT = "mt"
-    RETSINFO = "retsinfo"
+class PubMedia(StrEnum):
+    FT = "ft"  # Folketingstidende as the official medium of publication of documents of the Danish Parliament. These documents are also published in a special section in Retsinformation.
+    FOB = "fob"  # A special section in Retsinformation where the Danish Parliamentary Ombudsman publishes his views and decisions.
+    LTA = "lta"  # Lovtidende A as the official medium of publication of promulgated documents.
+    LTB = "ltb"  # Lovtidende B as the official medium of publication of promulgated documents.
+    LTC = "ltc"  # Lovtidende C as the official medium of publication of promulgated documents.
+    MT = "mt"  # Ministerialtidende as the official medium of publication of the document. Since the date 01-01-2013 documents are no longer published in Ministerialtidende.
+    RETSINFO = "retsinfo"  # Retsinformation as the official medium of publication of non-promulgated documents, e.g. documents classified in Retsinformation as decisions.
 
 
 @dataclass(frozen=True)
@@ -32,12 +31,14 @@ class SitemapEntry:
     lastmod: str
     id: str
     year: str
-    type: DocumentType
+    type: PubMedia
 
 
 def _required_mapping(value: object, field: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
-        raise ValueError(f"dotnet sitemap page output field {field!r} must be an object")
+        raise ValueError(
+            f"dotnet sitemap page output field {field!r} must be an object"
+        )
 
     return value
 
@@ -71,12 +72,18 @@ def _required_float(value: Mapping[str, object], field: str) -> float:
 
 def _required_str_int_dict(value: object, field: str) -> dict[str, int]:
     if not isinstance(value, Mapping):
-        raise ValueError(f"dotnet sitemap page output field {field!r} must be an object")
+        raise ValueError(
+            f"dotnet sitemap page output field {field!r} must be an object"
+        )
 
     counts: dict[str, int] = {}
 
     for key, count in value.items():
-        if not isinstance(key, str) or isinstance(count, bool) or not isinstance(count, int):
+        if (
+            not isinstance(key, str)
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+        ):
             raise ValueError(
                 f"dotnet sitemap page output field {field!r} must map strings to ints"
             )
@@ -100,7 +107,7 @@ def _load_entries(value: object) -> list[SitemapEntry]:
                 lastmod=_required_str(entry, "lastmod"),
                 id=_required_str(entry, "id"),
                 year=_required_str(entry, "year"),
-                type=DocumentType(_required_str(entry, "type")),
+                type=PubMedia(_required_str(entry, "type")),
             )
         )
 
@@ -166,7 +173,9 @@ def retsinfo_sitemap_page(
             "sitemap_page_count": _required_int(result, "sitemapPageCount"),
             "entry_count": entry_count,
             "skipped_count": _required_int(result, "skippedCount"),
-            "type_counts": _required_str_int_dict(result.get("typeCounts"), "typeCounts"),
+            "type_counts": _required_str_int_dict(
+                result.get("typeCounts"), "typeCounts"
+            ),
             "year_count": _required_int(result, "yearCount"),
             "fetch_seconds": round(_required_float(result, "fetchSeconds"), 3),
             "parse_seconds": round(_required_float(result, "parseSeconds"), 3),

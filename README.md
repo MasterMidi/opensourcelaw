@@ -45,10 +45,15 @@ Durable local outputs are written under `data/ingest` by default:
 ```text
 data/ingest/discovery/sitemap_pages/...
 data/ingest/raw/retsinformation_eli/...
+data/ingest/raw/retsinformation_documents/<document_type>/<year>/documents.jsonl
+data/ingest/raw/retsinformation_documents/<document_type>/<year>/failures.jsonl
+data/ingest/raw/retsinformation_documents/<document_type>/<year>/manifest.json
 data/ingest/metadata/raw_fetches.jsonl
 data/ingest/metadata/changed_raw_fetches.jsonl
 data/ingest/runs/<dagster-run-id>/...
 ```
+
+Document downloads are materialized as metadata only: Dagster stores counts and file paths, while document bodies stay in the JSONL files. Keep that boundary until an object store or real IO manager is needed.
 
 Useful local overrides:
 
