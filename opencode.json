@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "python": {
+      "command": ["pyright-langserver", "--stdio"],
+      "extensions": [".py"]
+    },
+    "csharp": {
+      "command": ["csharp-ls"],
+      "extensions": [".cs"]
+    }
+  },
+  "permission": {
+    "lsp": "allow"
+  }
+}
