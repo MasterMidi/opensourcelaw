@@ -1,4 +1,9 @@
-from dagster import Definitions, ScheduleDefinition, define_asset_job
+from dagster import (
+    Definitions,
+    PipesSubprocessClient,
+    ScheduleDefinition,
+    define_asset_job,
+)
 
 from learning import (
     configurable_greeting,
@@ -27,6 +32,10 @@ from src.assets.retsinformation.documents import (
     ilt_document_refs,
     retsinfo_document_pages,
     retsinfo_document_refs,
+)
+from src.assets.retsinformation.downloader import (
+    retsinfo_downloader,
+    retsinfo_downloader_test,
 )
 from src.assets.retsinformation.pages import retsinfo_sitemap_page
 from src.assets.retsinformation.sitemap import retsinfo_sitemap_index
@@ -72,6 +81,8 @@ defs = Definitions(
         ilt_document_pages,
         retsinfo_document_refs,
         retsinfo_document_pages,
+        retsinfo_downloader,
+        retsinfo_downloader_test,
     ],
     asset_checks=[parsed_titles_are_not_empty],
     jobs=[learning_file_pipeline_job],
@@ -81,5 +92,6 @@ defs = Definitions(
         "learning_storage": LearningStorageResource(),
         "retsinformation_curl": RetsinformationCurlResource(),
         "retsinformation_http": RetsinformationHttpResource(),
+        "pipes_subprocess_client": PipesSubprocessClient(),
     },
 )

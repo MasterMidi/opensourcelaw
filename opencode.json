@@ -12,5 +12,6 @@
   },
   "permission": {
     "lsp": "allow"
-  }
+  },
+  "plugin": ["@dietrichgebert/ponytail"]
 }
