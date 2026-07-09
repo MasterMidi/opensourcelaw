@@ -16,5 +16,6 @@ services:
     environment:
       AWS_ACCESS_KEY_ID: opensourcelaw
       AWS_SECRET_ACCESS_KEY: opensourcelaw
+      WEED_MASTER_VOLUME_GROWTH_COPY_1: 1
     ports:
       - "8333:8333"
