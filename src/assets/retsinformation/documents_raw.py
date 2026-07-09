@@ -1,15 +1,13 @@
-import hashlib
-import mimetypes
-import tempfile
 from datetime import date
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from dagster import (
     AssetExecutionContext,
     DataVersion,
     MaterializeResult,
     MultiPartitionsDefinition,
+    RetryPolicy,
     StaticPartitionsDefinition,
     asset,
 )
@@ -36,16 +34,6 @@ document_partitions = MultiPartitionsDefinition(
 )
 
 
-class RawObjectStore(Protocol):
-    def resolved_bucket(self) -> str: ...
-
-    def ensure_bucket(self) -> None: ...
-
-    def put_file(self, key: str, path: Path, content_type: str) -> None: ...
-
-    def put_json(self, key: str, value: object) -> None: ...
-
-
 def _entry_payload(entry: SitemapEntry) -> dict[str, str]:
     return {
         "url": entry.url,
@@ -56,89 +44,12 @@ def _entry_payload(entry: SitemapEntry) -> dict[str, str]:
     }
 
 
-def _raw_document_data_version(output_dir: Path) -> str:
-    hasher = hashlib.sha256()
-
-    for path in _raw_document_payload_paths(output_dir):
-        hasher.update(path.relative_to(output_dir).as_posix().encode("utf-8"))
-        hasher.update(b"\0")
-        hasher.update(hashlib.sha256(path.read_bytes()).hexdigest().encode("ascii"))
-        hasher.update(b"\0")
-
-    return hasher.hexdigest()
-
-
-def _raw_document_payload_paths(output_dir: Path) -> list[Path]:
-    paths: list[Path] = []
-
-    for directory in [output_dir / "xml", output_dir / "jsonld"]:
-        if directory.exists():
-            paths.extend(path for path in directory.rglob("*") if path.is_file())
-
-    failures_path = output_dir / "failures.jsonl"
-    if failures_path.exists():
-        paths.append(failures_path)
-
-    return sorted(paths, key=lambda path: path.relative_to(output_dir).as_posix())
-
-
-def _upload_raw_documents(
-    output_dir: Path,
-    document_type: PubMedia,
-    year: str,
-    data_version: str,
-    raw_object_store: RawObjectStore,
-) -> dict[str, Any]:
-    bucket = raw_object_store.resolved_bucket()
-    prefix = f"raw/retsinformation_documents/{document_type.value}/{year}/{data_version}"
-    latest_key = f"raw/retsinformation_documents/{document_type.value}/{year}/latest.json"
-    uploaded_count = 0
-    objects: list[dict[str, str]] = []
-
-    raw_object_store.ensure_bucket()
-
-    for path in sorted(output_dir.rglob("*")):
-        if not path.is_file():
-            continue
-
-        relative_path = path.relative_to(output_dir).as_posix()
-        key = f"{prefix}/{relative_path}"
-        raw_object_store.put_file(key, path, _content_type(path))
-        objects.append({"key": key, "path": relative_path})
-        uploaded_count += 1
-
-    raw_object_store.put_json(
-        latest_key,
-        {
-            "bucket": bucket,
-            "prefix": prefix,
-            "data_version": data_version,
-            "manifest_key": f"{prefix}/manifest.json",
-            "objects": objects,
-        },
-    )
-
-    return {
-        "raw_bucket": bucket,
-        "raw_prefix": prefix,
-        "raw_latest_key": latest_key,
-        "raw_uploaded_object_count": uploaded_count,
-    }
-
-
-def _content_type(path: Path) -> str:
-    if path.suffix == ".jsonl":
-        return "application/x-ndjson"
-
-    return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-
-
 def _stable_result_metadata(result: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value
         for key, value in result.items()
         if value is not None
-        and key not in {"outputDir"}
+        and key not in {"objects", "outputDir"}
         and not key.endswith("Path")
         and not key.endswith("DirectoryPath")
     }
@@ -148,6 +59,7 @@ def _stable_result_metadata(result: dict[str, Any]) -> dict[str, Any]:
     group_name="retsinformation",
     partitions_def=document_partitions,
     pool="retsinformation_dotnet",
+    retry_policy=RetryPolicy(max_retries=2),
 )
 def retsinfo_documents(
     context: AssetExecutionContext,
@@ -162,34 +74,69 @@ def retsinfo_documents(
         f"Downloading {document_type.value}/{year} XML documents with dotnet: "
         f"{RETSINFO_DOWNLOADER_TOOL}"
     )
+    bucket = raw_object_store.resolved_bucket()
+    prefix = f"raw/retsinformation_documents/{document_type.value}/{year}"
 
-    with tempfile.TemporaryDirectory(prefix="opensourcelaw-retsinfo-raw-") as temp_dir:
-        output_dir = Path(temp_dir) / document_type.value / year
-        result = cast(
-            dict[str, Any],
-            dotnet_script.run_json(
-                context,
-                RETSINFO_DOWNLOADER_TOOL,
-                {
-                    "documentType": document_type.value,
-                    "year": year,
-                    "outputDir": str(output_dir.resolve()),
-                    "userAgent": RETSINFO_USER_AGENT,
-                    "timeoutSeconds": RETSINFO_PAGE_REQUEST_TIMEOUT_SECONDS,
-                    "retsinfoSitemapPage": [
-                        _entry_payload(entry) for entry in retsinfo_sitemap_pages
-                    ],
+    raw_object_store.ensure_bucket()
+    result = cast(
+        dict[str, Any],
+        dotnet_script.run_json(
+            context,
+            RETSINFO_DOWNLOADER_TOOL,
+            {
+                "documentType": document_type.value,
+                "year": year,
+                "userAgent": RETSINFO_USER_AGENT,
+                "timeoutSeconds": RETSINFO_PAGE_REQUEST_TIMEOUT_SECONDS,
+                "retsinfoSitemapPage": [
+                    _entry_payload(entry) for entry in retsinfo_sitemap_pages
+                ],
+                "s3": {
+                    "bucket": bucket,
+                    "endpointUrl": raw_object_store.endpoint_url,
+                    "region": raw_object_store.region,
+                    "accessKeyId": raw_object_store.access_key_id,
+                    "secretAccessKey": raw_object_store.secret_access_key,
+                    "prefix": prefix,
+                    "maxAttempts": raw_object_store.max_attempts,
                 },
-            ),
-        )
-        raw_data_version = _raw_document_data_version(output_dir)
-        storage_metadata = _upload_raw_documents(
-            output_dir,
-            document_type,
-            year,
-            raw_data_version,
-            raw_object_store,
-        )
+            },
+        ),
+    )
+    raw_data_version = result.get("dataVersion")
+    raw_prefix = result.get("rawPrefix")
+    raw_latest_key = result.get("rawLatestKey")
+    raw_manifest_key = result.get("rawManifestKey")
+    objects = result.get("objects")
+
+    if not isinstance(raw_data_version, str):
+        raise ValueError("dotnet downloader output field 'dataVersion' must be a string")
+    if not isinstance(raw_prefix, str):
+        raise ValueError("dotnet downloader output field 'rawPrefix' must be a string")
+    if not isinstance(raw_latest_key, str):
+        raise ValueError("dotnet downloader output field 'rawLatestKey' must be a string")
+    if not isinstance(raw_manifest_key, str):
+        raise ValueError("dotnet downloader output field 'rawManifestKey' must be a string")
+    if not isinstance(objects, list):
+        raise ValueError("dotnet downloader output field 'objects' must be a list")
+
+    raw_object_store.put_json(
+        raw_latest_key,
+        {
+            "bucket": bucket,
+            "prefix": raw_prefix,
+            "data_version": raw_data_version,
+            "manifest_key": raw_manifest_key,
+            "objects": objects,
+        },
+    )
+    storage_metadata = {
+        "raw_bucket": bucket,
+        "raw_prefix": raw_prefix,
+        "raw_latest_key": raw_latest_key,
+        "raw_manifest_key": raw_manifest_key,
+        "raw_uploaded_object_count": len(objects),
+    }
 
     return MaterializeResult(
         data_version=DataVersion(raw_data_version),
