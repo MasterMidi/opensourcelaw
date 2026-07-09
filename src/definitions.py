@@ -16,6 +16,7 @@ from src.resources import (
     DotnetScriptResource,
     LearningStorageResource,
     RetsinformationHttpResource,
+    S3ObjectStoreResource,
 )
 
 learning_file_pipeline_job = define_asset_job(
@@ -40,6 +41,7 @@ defs = Definitions(
     resources={
         "dotnet_script": DotnetScriptResource(),
         "learning_storage": LearningStorageResource(),
+        "raw_object_store": S3ObjectStoreResource(),
         "retsinformation_http": RetsinformationHttpResource(),
     },
 )
