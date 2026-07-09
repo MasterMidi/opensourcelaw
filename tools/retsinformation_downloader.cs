@@ -6,15 +6,17 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Microsoft.Extensions.Logging;
 using OpenSourceLaw.Tools;
 
 return await RetsinformationDownloaderTool.RunAsync();
 
-internal static class RetsinformationDownloaderTool
+internal static partial class RetsinformationDownloaderTool
 {
     // ponytail: local constants are enough until tools share release metadata.
     private const string ToolName = "retsinformation_downloader";
     private const string ToolVersion = "0.1";
+    private static readonly ILogger Logger = ToolLog.Logger;
 
     public static async Task<int> RunAsync()
     {
@@ -35,7 +37,7 @@ internal static class RetsinformationDownloaderTool
         }
         catch (Exception error)
         {
-            ToolLog.Error(error.Message);
+            LogToolFailed(Logger, error, error.Message);
             return 1;
         }
     }
@@ -102,7 +104,7 @@ internal static class RetsinformationDownloaderTool
                 : input.UserAgent
         );
 
-        ToolLog.Info($"Downloading {documentRefs.Count} XML documents to {xmlDirectoryPath}");
+        LogDownloadStarted(Logger, documentRefs.Count, input.DocumentType!, input.Year!, xmlDirectoryPath);
 
         await using (var failures = new StreamWriter(tempFailuresPath, false, new UTF8Encoding(false)))
         {
@@ -115,8 +117,11 @@ internal static class RetsinformationDownloaderTool
                     notFoundCount += 1;
                 }
 
-                ToolLog.Warn(
-                    $"Endpoint {url} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}"
+                LogEndpointFailed(
+                    Logger,
+                    url,
+                    (int)response.StatusCode,
+                    response.ReasonPhrase ?? "request failed"
                 );
                 await failures.WriteLineAsync(
                     JsonSerializer.Serialize(
@@ -135,6 +140,7 @@ internal static class RetsinformationDownloaderTool
             {
                 var entry = documentRefs[index];
                 ValidateEntry(entry);
+                LogFetchingDocument(Logger, index + 1, documentRefs.Count, entry.Type, entry.Year, entry.Id);
 
                 var xmlUrl = DocumentXmlUrl(entry.Url);
                 var jsonLdUrl = DocumentJsonLdUrl(entry.Url);
@@ -169,6 +175,7 @@ internal static class RetsinformationDownloaderTool
                         DocumentMetadata(entry, xmlUrl, bytes),
                         RetsinformationDownloaderJsonContext.Default.DocumentMetadataOutput
                     );
+                    LogSavedDocument(Logger, fileName, bytes.Length, jsonLdBytes.Length);
                     downloadedCount += 1;
                     bytesDownloaded += bytes.Length;
                     continue;
@@ -221,11 +228,84 @@ internal static class RetsinformationDownloaderTool
             output,
             RetsinformationDownloaderJsonContext.Default.ToolOutput
         );
-        ToolLog.Info(
-            $"Downloaded {downloadedCount}/{documentRefs.Count} XML documents ({failedCount} failed)"
-        );
+        LogDownloadFinished(Logger, downloadedCount, documentRefs.Count, failedCount, notFoundCount);
         return output;
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Information,
+        Message = "Downloading {DocumentCount} {DocumentType}/{Year} XML documents to {XmlDirectoryPath}."
+    )]
+    private static partial void LogDownloadStarted(
+        ILogger logger,
+        int documentCount,
+        string documentType,
+        string year,
+        string xmlDirectoryPath
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Debug,
+        Message = "Fetching document {Index}/{DocumentCount}: {DocumentType}/{Year}/{DocumentId}."
+    )]
+    private static partial void LogFetchingDocument(
+        ILogger logger,
+        int index,
+        int documentCount,
+        string documentType,
+        string year,
+        string documentId
+    );
+
+    [LoggerMessage(
+        EventId = 3,
+        Level = LogLevel.Debug,
+        Message = "Saved {FileName}: XML {XmlBytes} bytes, JSON-LD {JsonLdBytes} bytes."
+    )]
+    private static partial void LogSavedDocument(
+        ILogger logger,
+        string fileName,
+        int xmlBytes,
+        int jsonLdBytes
+    );
+
+    [LoggerMessage(
+        EventId = 4,
+        Level = LogLevel.Warning,
+        Message = "Endpoint {Url} returned HTTP {StatusCode} {Reason}."
+    )]
+    private static partial void LogEndpointFailed(
+        ILogger logger,
+        string url,
+        int statusCode,
+        string reason
+    );
+
+    [LoggerMessage(
+        EventId = 5,
+        Level = LogLevel.Information,
+        Message = "Downloaded {DownloadedCount}/{DocumentCount} XML documents ({FailedCount} failed, {NotFoundCount} not found)."
+    )]
+    private static partial void LogDownloadFinished(
+        ILogger logger,
+        int downloadedCount,
+        int documentCount,
+        int failedCount,
+        int notFoundCount
+    );
+
+    [LoggerMessage(
+        EventId = 6,
+        Level = LogLevel.Error,
+        Message = "Downloader failed: {ErrorMessage}."
+    )]
+    private static partial void LogToolFailed(
+        ILogger logger,
+        Exception exception,
+        string errorMessage
+    );
 
     private static string DocumentXmlUrl(string url)
     {

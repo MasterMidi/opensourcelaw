@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace OpenSourceLaw.Tools;
 
@@ -17,22 +18,24 @@ public static class ToolDefaults
 
 public static class ToolLog
 {
+    public static ILogger Logger { get; } = new DagsterLogger();
+
     public static void Info(string message)
     {
-        Write("info", message);
+        Write(LogLevel.Information, message);
     }
 
     public static void Warn(string message)
     {
-        Write("warn", message);
+        Write(LogLevel.Warning, message);
     }
 
     public static void Error(string message)
     {
-        Write("error", message);
+        Write(LogLevel.Error, message);
     }
 
-    private static void Write(string level, string message)
+    private static void Write(LogLevel level, string message)
     {
         if (DagsterPipes.TryLog(level, message))
         {
@@ -40,6 +43,32 @@ public static class ToolLog
         }
 
         Console.Error.WriteLine($"{DateTimeOffset.UtcNow:O} {level}: {message}");
+    }
+
+    private sealed class DagsterLogger : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            var message = formatter(state, exception);
+
+            if (exception is not null)
+            {
+                message += Environment.NewLine + exception;
+            }
+
+            Write(logLevel, message);
+        }
     }
 }
 
@@ -103,7 +132,7 @@ public sealed class DagsterPipes : IDisposable
         );
     }
 
-    public static bool TryLog(string level, string message)
+    public static bool TryLog(LogLevel level, string message)
     {
         if (!IsActive)
         {
@@ -120,8 +149,10 @@ public sealed class DagsterPipes : IDisposable
                     "level",
                     level switch
                     {
-                        "error" => "ERROR",
-                        "warn" => "WARNING",
+                        LogLevel.Critical => "CRITICAL",
+                        LogLevel.Error => "ERROR",
+                        LogLevel.Warning => "WARNING",
+                        LogLevel.Debug or LogLevel.Trace => "DEBUG",
                         _ => "INFO",
                     }
                 );
