@@ -51,10 +51,12 @@ internal static class RetsinformationDownloaderTool
 
         var outputDir = Path.GetFullPath(input.OutputDir!);
         var xmlDirectoryPath = Path.Combine(outputDir, "xml");
+        var jsonLdDirectoryPath = Path.Combine(outputDir, "jsonld");
         var metadataDirectoryPath = Path.Combine(outputDir, "metadata");
         var failuresPath = Path.Combine(outputDir, "failures.jsonl");
         var manifestPath = Path.Combine(outputDir, "manifest.json");
         var tempXmlDirectoryPath = xmlDirectoryPath + ".tmp";
+        var tempJsonLdDirectoryPath = jsonLdDirectoryPath + ".tmp";
         var tempMetadataDirectoryPath = metadataDirectoryPath + ".tmp";
         var tempFailuresPath = failuresPath + ".tmp";
         var documentRefs = input.RetsinfoSitemapPage!
@@ -77,7 +79,13 @@ internal static class RetsinformationDownloaderTool
             Directory.Delete(tempMetadataDirectoryPath, true);
         }
 
+        if (Directory.Exists(tempJsonLdDirectoryPath))
+        {
+            Directory.Delete(tempJsonLdDirectoryPath, true);
+        }
+
         Directory.CreateDirectory(tempXmlDirectoryPath);
+        Directory.CreateDirectory(tempJsonLdDirectoryPath);
         Directory.CreateDirectory(tempMetadataDirectoryPath);
 
         using var handler = new HttpClientHandler
@@ -98,12 +106,38 @@ internal static class RetsinformationDownloaderTool
 
         await using (var failures = new StreamWriter(tempFailuresPath, false, new UTF8Encoding(false)))
         {
+            async Task RecordFailureAsync(SitemapEntry entry, string url, HttpResponseMessage response)
+            {
+                failedCount += 1;
+
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    notFoundCount += 1;
+                }
+
+                ToolLog.Warn(
+                    $"Endpoint {url} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}"
+                );
+                await failures.WriteLineAsync(
+                    JsonSerializer.Serialize(
+                        new DocumentFetchFailureOutput(
+                            entry,
+                            url,
+                            (int)response.StatusCode,
+                            response.ReasonPhrase ?? "request failed"
+                        ),
+                        RetsinformationDownloaderJsonContext.Default.DocumentFetchFailureOutput
+                    )
+                );
+            }
+
             for (var index = 0; index < documentRefs.Count; index += 1)
             {
                 var entry = documentRefs[index];
                 ValidateEntry(entry);
 
                 var xmlUrl = DocumentXmlUrl(entry.Url);
+                var jsonLdUrl = DocumentJsonLdUrl(entry.Url);
                 using var response = await httpClient.GetAsync(
                     xmlUrl,
                     HttpCompletionOption.ResponseContentRead
@@ -112,8 +146,24 @@ internal static class RetsinformationDownloaderTool
 
                 if (response.IsSuccessStatusCode)
                 {
+                    using var jsonLdResponse = await httpClient.GetAsync(
+                        jsonLdUrl,
+                        HttpCompletionOption.ResponseContentRead
+                    );
+                    var jsonLdBytes = await jsonLdResponse.Content.ReadAsByteArrayAsync();
+
+                    if (!jsonLdResponse.IsSuccessStatusCode)
+                    {
+                        await RecordFailureAsync(entry, jsonLdUrl, jsonLdResponse);
+                        continue;
+                    }
+
                     var fileName = DocumentFileName(entry, index + 1);
                     await File.WriteAllBytesAsync(Path.Combine(tempXmlDirectoryPath, fileName), bytes);
+                    await File.WriteAllBytesAsync(
+                        Path.Combine(tempJsonLdDirectoryPath, Path.ChangeExtension(fileName, ".json")),
+                        jsonLdBytes
+                    );
                     await WriteJsonFileAsync(
                         Path.Combine(tempMetadataDirectoryPath, Path.ChangeExtension(fileName, ".json")),
                         DocumentMetadata(entry, xmlUrl, bytes),
@@ -124,27 +174,7 @@ internal static class RetsinformationDownloaderTool
                     continue;
                 }
 
-                failedCount += 1;
-
-                if (response.StatusCode == HttpStatusCode.NotFound)
-                {
-                    notFoundCount += 1;
-                }
-
-                ToolLog.Warn(
-                    $"XML endpoint {xmlUrl} returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}"
-                );
-                await failures.WriteLineAsync(
-                    JsonSerializer.Serialize(
-                        new DocumentFetchFailureOutput(
-                            entry,
-                            xmlUrl,
-                            (int)response.StatusCode,
-                            response.ReasonPhrase ?? "request failed"
-                        ),
-                        RetsinformationDownloaderJsonContext.Default.DocumentFetchFailureOutput
-                    )
-                );
+                await RecordFailureAsync(entry, xmlUrl, response);
             }
         }
 
@@ -158,7 +188,13 @@ internal static class RetsinformationDownloaderTool
             Directory.Delete(metadataDirectoryPath, true);
         }
 
+        if (Directory.Exists(jsonLdDirectoryPath))
+        {
+            Directory.Delete(jsonLdDirectoryPath, true);
+        }
+
         Directory.Move(tempXmlDirectoryPath, xmlDirectoryPath);
+        Directory.Move(tempJsonLdDirectoryPath, jsonLdDirectoryPath);
         Directory.Move(tempMetadataDirectoryPath, metadataDirectoryPath);
         File.Move(tempFailuresPath, failuresPath, true);
 
@@ -168,6 +204,7 @@ internal static class RetsinformationDownloaderTool
             input.Year!,
             outputDir,
             xmlDirectoryPath,
+            jsonLdDirectoryPath,
             metadataDirectoryPath,
             failuresPath,
             manifestPath,
@@ -195,6 +232,8 @@ internal static class RetsinformationDownloaderTool
         var baseUrl = url.TrimEnd('/');
         return baseUrl.EndsWith("/xml", StringComparison.Ordinal) ? baseUrl : baseUrl + "/xml";
     }
+
+    private static string DocumentJsonLdUrl(string url) => url.TrimEnd('/') + ".json";
 
     private static string DocumentFileName(SitemapEntry entry, int index)
     {
@@ -320,6 +359,7 @@ internal sealed record ToolOutput(
     [property: JsonPropertyName("year")] string Year,
     [property: JsonPropertyName("outputDir")] string OutputDir,
     [property: JsonPropertyName("xmlDirectoryPath")] string XmlDirectoryPath,
+    [property: JsonPropertyName("jsonLdDirectoryPath")] string JsonLdDirectoryPath,
     [property: JsonPropertyName("metadataDirectoryPath")] string MetadataDirectoryPath,
     [property: JsonPropertyName("failuresPath")] string FailuresPath,
     [property: JsonPropertyName("manifestPath")] string ManifestPath,
