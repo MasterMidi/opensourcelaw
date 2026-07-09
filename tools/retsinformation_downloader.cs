@@ -1,15 +1,21 @@
 #:project ./shared/OpenSourceLaw.Tools.csproj
 
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using OpenSourceLaw.Tools;
 
 return await RetsinformationDownloaderTool.RunAsync();
 
 internal static class RetsinformationDownloaderTool
 {
+    // ponytail: local constants are enough until tools share release metadata.
+    private const string ToolName = "retsinformation_downloader";
+    private const string ToolVersion = "0.1";
+
     public static async Task<int> RunAsync()
     {
         using var pipes = DagsterPipes.Open();
@@ -45,9 +51,11 @@ internal static class RetsinformationDownloaderTool
 
         var outputDir = Path.GetFullPath(input.OutputDir!);
         var xmlDirectoryPath = Path.Combine(outputDir, "xml");
+        var metadataDirectoryPath = Path.Combine(outputDir, "metadata");
         var failuresPath = Path.Combine(outputDir, "failures.jsonl");
         var manifestPath = Path.Combine(outputDir, "manifest.json");
         var tempXmlDirectoryPath = xmlDirectoryPath + ".tmp";
+        var tempMetadataDirectoryPath = metadataDirectoryPath + ".tmp";
         var tempFailuresPath = failuresPath + ".tmp";
         var documentRefs = input.RetsinfoSitemapPage!
             .Where(entry => entry.Type == input.DocumentType && entry.Year == input.Year)
@@ -64,7 +72,13 @@ internal static class RetsinformationDownloaderTool
             Directory.Delete(tempXmlDirectoryPath, true);
         }
 
+        if (Directory.Exists(tempMetadataDirectoryPath))
+        {
+            Directory.Delete(tempMetadataDirectoryPath, true);
+        }
+
         Directory.CreateDirectory(tempXmlDirectoryPath);
+        Directory.CreateDirectory(tempMetadataDirectoryPath);
 
         using var handler = new HttpClientHandler
         {
@@ -98,9 +112,12 @@ internal static class RetsinformationDownloaderTool
 
                 if (response.IsSuccessStatusCode)
                 {
-                    await File.WriteAllBytesAsync(
-                        Path.Combine(tempXmlDirectoryPath, DocumentFileName(entry, index + 1)),
-                        bytes
+                    var fileName = DocumentFileName(entry, index + 1);
+                    await File.WriteAllBytesAsync(Path.Combine(tempXmlDirectoryPath, fileName), bytes);
+                    await WriteJsonFileAsync(
+                        Path.Combine(tempMetadataDirectoryPath, Path.ChangeExtension(fileName, ".json")),
+                        DocumentMetadata(entry, xmlUrl, bytes),
+                        RetsinformationDownloaderJsonContext.Default.DocumentMetadataOutput
                     );
                     downloadedCount += 1;
                     bytesDownloaded += bytes.Length;
@@ -136,7 +153,13 @@ internal static class RetsinformationDownloaderTool
             Directory.Delete(xmlDirectoryPath, true);
         }
 
+        if (Directory.Exists(metadataDirectoryPath))
+        {
+            Directory.Delete(metadataDirectoryPath, true);
+        }
+
         Directory.Move(tempXmlDirectoryPath, xmlDirectoryPath);
+        Directory.Move(tempMetadataDirectoryPath, metadataDirectoryPath);
         File.Move(tempFailuresPath, failuresPath, true);
 
         var firstEntry = documentRefs.FirstOrDefault();
@@ -145,6 +168,7 @@ internal static class RetsinformationDownloaderTool
             input.Year!,
             outputDir,
             xmlDirectoryPath,
+            metadataDirectoryPath,
             failuresPath,
             manifestPath,
             documentRefs.Count,
@@ -155,7 +179,11 @@ internal static class RetsinformationDownloaderTool
             firstEntry is null ? null : DocumentXmlUrl(firstEntry.Url)
         );
 
-        await WriteJsonFileAsync(manifestPath, output);
+        await WriteJsonFileAsync(
+            manifestPath,
+            output,
+            RetsinformationDownloaderJsonContext.Default.ToolOutput
+        );
         ToolLog.Info(
             $"Downloaded {downloadedCount}/{documentRefs.Count} XML documents ({failedCount} failed)"
         );
@@ -176,15 +204,36 @@ internal static class RetsinformationDownloaderTool
         return $"{index:000000}_{id}.xml";
     }
 
-    private static async Task WriteJsonFileAsync(string path, ToolOutput output)
+    private static DocumentMetadataOutput DocumentMetadata(
+        SitemapEntry entry,
+        string xmlUrl,
+        byte[] bytes
+    ) => new(
+        new DocumentMetadataTool(ToolName, ToolVersion),
+        new DocumentMetadataSource(
+            entry.Type,
+            entry.Year,
+            entry.Id,
+            $"/eli/{entry.Type}/{entry.Year}/{entry.Id}",
+            entry.Url,
+            xmlUrl
+        ),
+        DateTimeOffset.UtcNow,
+        "application/xml",
+        bytes.Length,
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()
+    );
+
+    private static async Task WriteJsonFileAsync<T>(
+        string path,
+        T output,
+        JsonTypeInfo<T> jsonTypeInfo
+    )
     {
         var tempPath = path + ".tmp";
         await File.WriteAllTextAsync(
             tempPath,
-            JsonSerializer.Serialize(
-                output,
-                RetsinformationDownloaderJsonContext.Default.ToolOutput
-            ),
+            JsonSerializer.Serialize(output, jsonTypeInfo),
             new UTF8Encoding(false)
         );
         File.Move(tempPath, path, true);
@@ -243,11 +292,35 @@ internal sealed record DocumentFetchFailureOutput(
     [property: JsonPropertyName("reason")] string Reason
 );
 
+internal sealed record DocumentMetadataTool(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("version")] string Version
+);
+
+internal sealed record DocumentMetadataSource(
+    [property: JsonPropertyName("eli_type")] string EliType,
+    [property: JsonPropertyName("year")] string Year,
+    [property: JsonPropertyName("number")] string Number,
+    [property: JsonPropertyName("eli_uri")] string EliUri,
+    [property: JsonPropertyName("source_url")] string SourceUrl,
+    [property: JsonPropertyName("xml_url")] string XmlUrl
+);
+
+internal sealed record DocumentMetadataOutput(
+    [property: JsonPropertyName("tool")] DocumentMetadataTool Tool,
+    [property: JsonPropertyName("source")] DocumentMetadataSource Source,
+    [property: JsonPropertyName("fetched_at")] DateTimeOffset FetchedAt,
+    [property: JsonPropertyName("content_type")] string ContentType,
+    [property: JsonPropertyName("content_bytes")] int ContentBytes,
+    [property: JsonPropertyName("sha256")] string Sha256
+);
+
 internal sealed record ToolOutput(
     [property: JsonPropertyName("documentType")] string DocumentType,
     [property: JsonPropertyName("year")] string Year,
     [property: JsonPropertyName("outputDir")] string OutputDir,
     [property: JsonPropertyName("xmlDirectoryPath")] string XmlDirectoryPath,
+    [property: JsonPropertyName("metadataDirectoryPath")] string MetadataDirectoryPath,
     [property: JsonPropertyName("failuresPath")] string FailuresPath,
     [property: JsonPropertyName("manifestPath")] string ManifestPath,
     [property: JsonPropertyName("availableRefCount")] int AvailableRefCount,
@@ -262,4 +335,5 @@ internal sealed record ToolOutput(
 [JsonSerializable(typeof(ToolInput))]
 [JsonSerializable(typeof(ToolOutput))]
 [JsonSerializable(typeof(DocumentFetchFailureOutput))]
+[JsonSerializable(typeof(DocumentMetadataOutput))]
 internal partial class RetsinformationDownloaderJsonContext : JsonSerializerContext;
