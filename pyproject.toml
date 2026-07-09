@@ -12,6 +12,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+  "dagster-dg-cli>=1.13,<2.0",
   "pytest>=8.0",
 ]
 
