@@ -1,2 +1,3 @@
 - [ ] Explore https://www.retsinformation.dk/offentlig/xml/schemas/ for schemas at retsinformation to use as validation?
 - [ ] Write json metadata to raw xml files
+- [ ] Use this to create standardized way for c# scripts to get and send messages: https://docs.dagster.io/integrations/external-pipelines/javascript-pipeline#step-5-emit-events-and-report-materializations-from-your-external-process
