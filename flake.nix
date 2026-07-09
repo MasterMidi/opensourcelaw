@@ -105,7 +105,7 @@
               pkgs.curl
               dotnetSdk
               pkgs.lazysql
-              pkgs.pyright
+              pkgs.basedpyright
               pkgs.sqlite
               pkgs.stu
               stuSeaweedfs

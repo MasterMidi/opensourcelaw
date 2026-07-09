@@ -34,5 +34,12 @@ sources = ["src"]
 [tool.dagster]
 module_name = "definitions"
 
+[tool.basedpyright]
+typeCheckingMode = "standard"
+include = ["src", "tests"]
+exclude = ["skills/dagster-skills-evals"]
+extraPaths = ["src"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
+testpaths = ["tests"]

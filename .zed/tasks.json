@@ -1,7 +1,7 @@
 [
   {
     "label": "nix: build",
-    "command": "nix build",
+    "command": "nix build --no-link",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,

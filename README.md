@@ -4,6 +4,22 @@ This repository uses a raw Nix flake for Python and Dagster development.
 
 The flake keeps the setup small and portable for Linux and macOS without requiring an additional tool such as `devenv`. Nix provides Python 3.12 and `uv`; `uv.lock` is converted into a Nix-built virtualenv with `uv2nix`.
 
+## Environment
+
+Use the Nix dev shell as the only Python environment. It builds the Python 3.12 virtualenv from `uv.lock`; do not run `uv sync` or create a local `.venv` for this repo.
+
+Allow direnv once:
+
+```sh
+direnv allow
+```
+
+Then open Zed from the launcher. Do not launch Zed from inside `nix develop` or an already-loaded direnv shell.
+
+Zed is configured to start Basedpyright and Roslyn through `nix develop`, so Python analysis and C# analysis see the Nix-provided Python virtualenv and .NET SDK even when Zed was opened from the launcher. Stale `.venv` or `result` entries are disposable local artifacts.
+
+For agents and shells without direnv, prefix commands with `nix develop -c`, for example `nix develop -c python -m pytest`.
+
 ## Usage
 
 Enter the development shell:

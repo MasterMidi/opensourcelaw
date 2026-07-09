@@ -1,17 +1,43 @@
 {
+  "load_direnv": "direct",
   "languages": {
     "CSharp": {
-      "language_servers": ["roslyn", "!csharp-ls", "!omnisharp", "..."]
-    }
+      "language_servers": ["roslyn", "!csharp-ls", "!omnisharp", "!ty", "..."],
+    },
+    "Python": {
+      "language_servers": [
+        "basedpyright",
+        "!pyright",
+        "!ruff",
+        "!pylsp",
+        "...",
+      ],
+    },
   },
   "lsp": {
+    "basedpyright": {
+      "binary": {
+        "path": "nix",
+        "arguments": ["develop", "-c", "basedpyright-langserver", "--stdio"],
+      },
+    },
     "roslyn": {
+      "binary": {
+        "path": "nix",
+        "arguments": [
+          "develop",
+          "-c",
+          "Microsoft.CodeAnalysis.LanguageServer",
+          "--stdio",
+          "--autoLoadProjects",
+        ],
+      },
       "settings": {
         "csharp|projects": {
           "dotnet_enable_file_based_programs": true,
           "dotnet_enable_file_based_programs_when_ambiguous": true,
-        }
-      }
-    }
-  }
+        },
+      },
+    },
+  },
 }
