@@ -95,7 +95,9 @@
               pkgs.roslyn-ls
               pkgs.curl
               dotnetSdk
+              pkgs.lazysql
               pkgs.pyright
+              pkgs.sqlite
               pkgs.uv
             ];
 

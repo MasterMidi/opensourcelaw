@@ -32,13 +32,13 @@ dagster dev
 
 ## Retsinformation Raw Ingest
 
-The first Dagster asset chain fetches raw source data from `retsinformation.dk` only:
+The first Dagster asset chain fetches raw source data from `retsinformation.dk`, then parses downloaded XML:
 
 ```text
-sources -> retsinformation_sitemap_pages -> discovered_items -> raw_fetches -> changed_raw_fetches
+retsinfo_sitemap_index -> retsinfo_sitemap_pages -> retsinfo_documents -> retsinfo_parsed_documents
 ```
 
-This intentionally stops before parsing, normalization, chunking, embedding, or vector index syncing.
+This intentionally stops before normalization, embedding, or vector index syncing.
 
 Durable local outputs are written under `data/ingest` by default:
 
@@ -48,6 +48,8 @@ data/ingest/raw/retsinformation_eli/...
 data/ingest/raw/retsinformation_documents/<document_type>/<year>/xml/*.xml
 data/ingest/raw/retsinformation_documents/<document_type>/<year>/failures.jsonl
 data/ingest/raw/retsinformation_documents/<document_type>/<year>/manifest.json
+data/ingest/parsed/retsinformation_documents/<document_type>/<year>/*.jsonl
+data/ingest/parsed/retsinformation_documents/<document_type>/<year>/manifest.json
 data/ingest/metadata/raw_fetches.jsonl
 data/ingest/metadata/changed_raw_fetches.jsonl
 data/ingest/runs/<dagster-run-id>/...

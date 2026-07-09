@@ -7,7 +7,9 @@ from dagster import (
 from learning import (
     parsed_titles_are_not_empty,
 )
-from src.assets.retsinformation.document import retsinfo_documents
+from src.assets.retsinformation.documents_raw import retsinfo_documents
+from src.assets.retsinformation.documents_parsed import retsinfo_parsed_documents
+from src.assets.retsinformation.documents_sqlite import retsinfo_documents_sqlite
 from src.assets.retsinformation.sitemap_index import retsinfo_sitemap_index
 from src.assets.retsinformation.sitemap_pages import retsinfo_sitemap_pages
 from src.resources import (
@@ -29,6 +31,8 @@ defs = Definitions(
         retsinfo_sitemap_index,
         retsinfo_sitemap_pages,
         retsinfo_documents,
+        retsinfo_parsed_documents,
+        retsinfo_documents_sqlite,
     ],
     asset_checks=[parsed_titles_are_not_empty],
     jobs=[learning_file_pipeline_job],
