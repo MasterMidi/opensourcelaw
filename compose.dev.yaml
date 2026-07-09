@@ -9,7 +9,6 @@ services:
       - server
       - -ip=seaweedfs
       - -ip.bind=0.0.0.0
-      - -dir=/tmp/seaweedfs
       - -volume.max=1
       - -s3
       - -s3.port=8333

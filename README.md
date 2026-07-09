@@ -30,6 +30,26 @@ Start the local Dagster UI:
 dagster dev
 ```
 
+## Local S3 Viewer
+
+Start the SeaweedFS S3 endpoint:
+
+```sh
+sudo docker compose -f compose.dev.yaml up -d seaweedfs
+```
+
+Open it in STU:
+
+```sh
+stu-seaweedfs
+```
+
+To jump straight to the pipeline's default raw bucket:
+
+```sh
+stu-seaweedfs --bucket opensourcelaw-raw
+```
+
 ## Retsinformation Raw Ingest
 
 The first Dagster asset chain fetches raw source data from `retsinformation.dk`, then parses downloaded XML:

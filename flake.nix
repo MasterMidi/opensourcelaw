@@ -86,6 +86,15 @@
           virtualenv = pythonSet.mkVirtualEnv "opensourcelaw-dev-env" workspace.deps.all;
           dotnetSdk = pkgs.dotnet-sdk_10;
           dotnetRoot = "${dotnetSdk.unwrapped}/share/dotnet";
+          stuSeaweedfs = pkgs.writeShellScriptBin "stu-seaweedfs" ''
+            endpoint_url="''${OPENSOURCELAW_S3_ENDPOINT_URL:-http://localhost:8333}"
+            region="''${OPENSOURCELAW_S3_REGION:-us-east-1}"
+
+            export AWS_ACCESS_KEY_ID="''${OPENSOURCELAW_S3_ACCESS_KEY_ID:-opensourcelaw}"
+            export AWS_SECRET_ACCESS_KEY="''${OPENSOURCELAW_S3_SECRET_ACCESS_KEY:-opensourcelaw}"
+
+            exec ${pkgs.stu}/bin/stu --endpoint-url "$endpoint_url" --region "$region" --path-style always "$@"
+          '';
         in
         {
           default = pkgs.mkShell {
@@ -98,6 +107,8 @@
               pkgs.lazysql
               pkgs.pyright
               pkgs.sqlite
+              pkgs.stu
+              stuSeaweedfs
               pkgs.uv
             ];
 
