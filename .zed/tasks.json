@@ -44,4 +44,13 @@
     "reveal": "always",
     "hide": "never",
   },
+  {
+    "label": "setup: run development containers",
+    "command": "sudo docker compose -f compose.dev.yaml up -d",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "on_success",
+  },
 ]

@@ -1,0 +1,21 @@
+# S3 endpoint: http://localhost:8333
+# Credentials: opensourcelaw / opensourcelaw
+name: opensourcelaw-s3-seaweedfs
+
+services:
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command:
+      - server
+      - -ip=seaweedfs
+      - -ip.bind=0.0.0.0
+      - -dir=/tmp/seaweedfs
+      - -volume.max=1
+      - -s3
+      - -s3.port=8333
+      - -s3.port.iceberg=0
+    environment:
+      AWS_ACCESS_KEY_ID: opensourcelaw
+      AWS_SECRET_ACCESS_KEY: opensourcelaw
+    ports:
+      - "8333:8333"
