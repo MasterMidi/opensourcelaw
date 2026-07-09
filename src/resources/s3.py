@@ -1,60 +1,14 @@
 import hashlib
 import hmac
 import json
-import os
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from time import sleep
 from urllib.error import HTTPError
 from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-from dagster import AssetExecutionContext, ConfigurableResource, PipesSubprocessClient
-
-
-class LearningStorageResource(ConfigurableResource):
-    base_dir: str = "data/learning"
-
-    def path_for(self, filename: str) -> Path:
-        path = Path(self.base_dir) / filename
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
-
-
-class DotnetScriptResource(ConfigurableResource):
-    command: str = "dotnet"
-
-    def run_json(
-        self, context: AssetExecutionContext, script_path: Path, payload: object
-    ) -> object:
-        with tempfile.TemporaryDirectory(prefix="opensourcelaw-dotnet-") as artifacts_dir:
-            invocation = PipesSubprocessClient(
-                cwd=str(script_path.parent),
-                env={
-                    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-                    "DOTNET_NOLOGO": "1",
-                },
-            ).run(
-                context=context,
-                command=[
-                    self.command,
-                    "run",
-                    "--artifacts-path",
-                    artifacts_dir,
-                    "--file",
-                    str(script_path),
-                ],
-                extras={"payload": payload},
-            )
-
-        messages = invocation.get_custom_messages()
-
-        if len(messages) != 1:
-            raise RuntimeError(
-                f"dotnet script reported {len(messages)} custom messages, expected 1"
-            )
-
-        return messages[0]
+from dagster import ConfigurableResource
 
 
 class S3RequestError(RuntimeError):
@@ -65,13 +19,14 @@ class S3RequestError(RuntimeError):
 
 class S3ObjectStoreResource(ConfigurableResource):
     bucket: str = "opensourcelaw-raw"
-    endpoint_url: str | None = None
+    endpoint_url: str = "http://localhost:8333"
     region: str = "us-east-1"
     access_key_id: str = "opensourcelaw"
     secret_access_key: str = "opensourcelaw"
+    max_attempts: int = 3
 
     def resolved_bucket(self) -> str:
-        return os.environ.get("OPENSOURCELAW_RAW_S3_BUCKET") or self.bucket
+        return self.bucket
 
     def ensure_bucket(self) -> None:
         bucket = self.resolved_bucket()
@@ -119,23 +74,44 @@ class S3ObjectStoreResource(ConfigurableResource):
         headers: dict[str, str],
         ok_statuses: set[int],
     ) -> bytes:
-        region = os.environ.get("OPENSOURCELAW_S3_REGION") or self.region
-        endpoint_url = (
-            os.environ.get("OPENSOURCELAW_S3_ENDPOINT_URL")
-            or os.environ.get("AWS_ENDPOINT_URL")
-            or self.endpoint_url
-            or f"https://s3.{region}.amazonaws.com"
-        )
-        access_key = (
-            os.environ.get("OPENSOURCELAW_S3_ACCESS_KEY_ID")
-            or os.environ.get("AWS_ACCESS_KEY_ID")
-            or self.access_key_id
-        )
-        secret_key = (
-            os.environ.get("OPENSOURCELAW_S3_SECRET_ACCESS_KEY")
-            or os.environ.get("AWS_SECRET_ACCESS_KEY")
-            or self.secret_access_key
-        )
+        attempts = max(1, self.max_attempts)
+
+        for attempt in range(1, attempts + 1):
+            request = self._signed_request(method, bucket, key, body, headers)
+            try:
+                with urlopen(request, timeout=30) as response:
+                    if response.status not in ok_statuses:
+                        raise S3RequestError(
+                            response.status,
+                            f"S3 {method} s3://{bucket}/{key} returned HTTP "
+                            f"{response.status}",
+                        )
+                    return response.read()
+            except HTTPError as error:
+                detail = error.read().decode("utf-8", "replace")
+                if 500 <= error.code <= 599 and attempt < attempts:
+                    sleep(attempt)
+                    continue
+                raise S3RequestError(
+                    error.code,
+                    f"S3 {method} s3://{bucket}/{key} failed HTTP {error.code} "
+                    f"after {attempt} attempt(s): {detail}",
+                ) from error
+
+        raise AssertionError("unreachable")
+
+    def _signed_request(
+        self,
+        method: str,
+        bucket: str,
+        key: str,
+        body: bytes,
+        headers: dict[str, str],
+    ) -> Request:
+        region = self.region
+        endpoint_url = self.endpoint_url
+        access_key = self.access_key_id
+        secret_key = self.secret_access_key
         now = datetime.now(timezone.utc)
         amz_date = now.strftime("%Y%m%dT%H%M%SZ")
         date_stamp = now.strftime("%Y%m%d")
@@ -185,27 +161,12 @@ class S3ObjectStoreResource(ConfigurableResource):
             f"SignedHeaders={signed_headers}, Signature={signature}"
         )
 
-        request = Request(
+        return Request(
             url,
             data=None if method == "HEAD" else body,
             headers=signed_headers_map,
             method=method,
         )
-
-        try:
-            with urlopen(request, timeout=30) as response:
-                if response.status not in ok_statuses:
-                    raise S3RequestError(
-                        response.status,
-                        f"S3 {method} s3://{bucket}/{key} returned HTTP {response.status}",
-                    )
-                return response.read()
-        except HTTPError as error:
-            raise S3RequestError(
-                error.code,
-                f"S3 {method} s3://{bucket}/{key} failed HTTP {error.code}: "
-                f"{error.read().decode('utf-8', 'replace')}",
-            ) from error
 
 
 def _s3_url(endpoint_url: str, bucket: str, key: str) -> tuple[str, str, str]:
@@ -230,14 +191,3 @@ def _s3_signing_key(secret_key: str, date_stamp: str, region: str) -> bytes:
     region_key = hmac.new(date_key, region.encode("utf-8"), hashlib.sha256).digest()
     service_key = hmac.new(region_key, b"s3", hashlib.sha256).digest()
     return hmac.new(service_key, b"aws4_request", hashlib.sha256).digest()
-
-
-class RetsinformationHttpResource(ConfigurableResource):
-    timeout_seconds: float = 30.0
-    user_agent: str = "opensourcelaw-retsinformation-ingest/0.1"
-
-    def get_bytes(self, url: str) -> bytes:
-        request = Request(url, headers={"User-Agent": self.user_agent})
-
-        with urlopen(request, timeout=self.timeout_seconds) as response:
-            return response.read()
